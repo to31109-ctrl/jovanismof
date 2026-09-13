@@ -50,6 +50,11 @@ if ($installer -notmatch 'UTF8Encoding\(\$false\)') {
     $faults += 'Install.ps1 no longer writes gamepath.txt without a byte-order mark.'
 }
 
+$packager = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Build-Package.ps1')
+if ($packager -match "update-repository\.txt'\)\s*-Value.*-Encoding\s+UTF8") {
+    $faults += 'Build-Package.ps1 writes update-repository.txt with -Encoding UTF8, which adds a byte-order mark. The updater would then reject the repository name.'
+}
+
 $launcher = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Play.vbs')
 if ($launcher -notmatch 'StripMark') {
     $faults += 'Play.vbs no longer strips a byte-order mark from the game path.'

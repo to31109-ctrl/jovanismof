@@ -32,7 +32,9 @@ try {
     foreach ($name in @('Install.cmd','Install.ps1','README.txt','Play.vbs','Splash.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $stage }
     if ($UpdateRepository) {
         if ($UpdateRepository -notmatch '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$') { throw "UpdateRepository must look like owner/repo, got '$UpdateRepository'." }
-        Set-Content -LiteralPath (Join-Path $stage 'update-repository.txt') -Value $UpdateRepository -Encoding UTF8
+        # No byte-order mark: the installer feeds this straight into configuration, and the
+        # updater's owner/repo pattern rejects a value with a mark glued to the front.
+        [IO.File]::WriteAllText((Join-Path $stage 'update-repository.txt'), $UpdateRepository, (New-Object System.Text.UTF8Encoding($false)))
     }
     Copy-Item -LiteralPath 'LICENSE' -Destination (Join-Path $stage 'LICENSE-GPL-2.0.txt')
     Copy-Item -LiteralPath 'BONKLINK.md' -Destination $stage
