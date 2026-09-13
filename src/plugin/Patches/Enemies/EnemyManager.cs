@@ -13,6 +13,26 @@ namespace MegabonkTogether.Patches.Enemies
         private static readonly ISynchronizationService synchronizationService = Plugin.Services.GetService<ISynchronizationService>();
         private static readonly IEnemyManagerService enemyManagerService = Plugin.Services.GetService<IEnemyManagerService>();
         private static readonly IGameBalanceService gameBalanceService = Plugin.Services.GetService<IGameBalanceService>();
+        private static bool spawningExtra;
+        private static float extraSpawnRemainder;
+
+        [HarmonyPostfix]
+        [HarmonyPatch(nameof(EnemyManager.SpawnEnemy), [typeof(EnemyData), typeof(int), typeof(bool), typeof(EEnemyFlag), typeof(bool)])]
+        public static void SpawnExtraEnemies(EnemyManager __instance, EnemyData enemyData, int summonerId, bool forceSpawn, EEnemyFlag flag, bool useDirectionBias, Enemy __result)
+        {
+            if (spawningExtra || forceSpawn || __result == null || __result.IsBoss() || __result.IsFinalBoss()
+                || !synchronizationService.HasNetplaySessionStarted() || synchronizationService.IsServerMode() != true) return;
+            extraSpawnRemainder += gameBalanceService.GetSpawnMultiplier() - 1f;
+            var extra = (int)extraSpawnRemainder;
+            extraSpawnRemainder -= extra;
+            spawningExtra = true;
+            try
+            {
+                for (var i = 0; i < extra && __instance.numEnemies < gameBalanceService.GetMaxEnemiesSpawnable(); i++)
+                    __instance.SpawnEnemy(enemyData, summonerId, false, flag, useDirectionBias);
+            }
+            finally { spawningExtra = false; }
+        }
 
         /// <summary>
         /// Only the server is allowed to spawn
@@ -74,7 +94,34 @@ namespace MegabonkTogether.Patches.Enemies
             var isServer = synchronizationService.IsServerMode() ?? false;
             if (isServer)
             {
+                ApplyLobbyHealthScaling(__result, flag);
                 synchronizationService.OnSpawnedEnemy(__result, enemyData.enemyName, pos, waveNumber, forceSpawn, flag, canBeElite, extraSizeMultiplier);
+            }
+        }
+
+        /// <summary>
+        /// Applies the host's per-extra-player health scaling. A restored checkpoint overwrites
+        /// health immediately afterwards, so a resumed enemy keeps the health it was saved with
+        /// rather than being scaled a second time.
+        /// </summary>
+        private static void ApplyLobbyHealthScaling(Enemy enemy, EEnemyFlag flag)
+        {
+            try
+            {
+                var multiplier = gameBalanceService.GetEnemyHpMultiplier(flag);
+                if (!float.IsFinite(multiplier) || multiplier <= 1.0001f) return;
+
+                var scaled = enemy.hp * multiplier;
+                if (!float.IsFinite(scaled) || scaled <= 0) return;
+
+                enemy.hp = scaled;
+                enemy.maxHp = scaled;
+                enemy.controlHp = scaled;
+                enemy._hp_k__BackingField = scaled;
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not scale enemy health for the lobby: {ex.Message}");
             }
         }
 

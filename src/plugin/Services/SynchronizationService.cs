@@ -31,6 +31,7 @@ using MegabonkTogether.Helpers;
 using MegabonkTogether.Patches;
 using MegabonkTogether.Scripts.Interactables;
 using MegabonkTogether.Scripts.Snapshot;
+using Microsoft.Extensions.DependencyInjection;
 using MonoMod.Utils;
 using System;
 using System.Collections;
@@ -281,8 +282,16 @@ namespace MegabonkTogether.Services
             return udpClientService.IsHost();
         }
 
+        // BonkLink edition, 2026-09-13: resolved lazily so the checkpoint service and this one
+        // can reference each other without a construction cycle.
+        private IWorldSaveService worldSaveService;
+        private IWorldSaveService WorldSaves => worldSaveService ??= Plugin.Services.GetService<IWorldSaveService>();
+
         public void Reset()
         {
+            try { WorldSaves?.OnSessionEnded(); }
+            catch (Exception ex) { logger.LogWarning($"Final co-op checkpoint failed: {ex.Message}"); }
+
             currentState = State.None;
             toSpawns.Clear();
             toUpdate.Clear();
@@ -305,9 +314,24 @@ namespace MegabonkTogether.Services
             {
                 return; //Game not started yet, ignore menu interactables !
             }
+
+            // BonkLink edition, 2026-09-13: a resumed stage drops the chests and interactables the
+            // players had already used, before any peer is told they exist.
+            if (WorldSaves != null)
+            {
+                var position = obj.transform.position;
+                if (WorldSaves.ShouldSuppressSpawnedObject(PrefabNameOf(obj), position.x, position.y, position.z))
+                {
+                    GameObject.Destroy(obj);
+                    return;
+                }
+            }
+
             var id = spawnedObjectManagerService.AddSpawnedObject(obj);
             SendSpawnedObject(id, obj);
         }
+
+        internal static string PrefabNameOf(GameObject obj) => obj == null ? "" : obj.name.Split('(').FirstOrDefault() ?? "";
 
         public void OnNewObjectToSpawn(SpawnedObject toSpawn)
         {
@@ -565,6 +589,9 @@ namespace MegabonkTogether.Services
             gameBalanceService.Initialize();
 
             Plugin.Instance.PreventDeath();
+
+            try { WorldSaves?.OnSessionStarted(); }
+            catch (Exception ex) { logger.LogError($"Co-op checkpoint restore failed: {ex}"); }
         }
 
         private void SendSpawnedObject(uint netplayId, GameObject obj)
@@ -679,6 +706,9 @@ namespace MegabonkTogether.Services
                     break;
                 case GameEvent.PortalOpened:
                     currentState = State.LoadingNextLevel;
+                    // The finished stage's checkpoint keeps what was used there; the next one starts clean.
+                    try { WorldSaves?.SaveNow("stage completed"); WorldSaves?.OnStageFinished(); }
+                    catch (Exception ex) { logger.LogWarning($"Stage co-op checkpoint failed: {ex.Message}"); }
                     playerManagerService.ResetForNextLevel();
                     PrepareForNextLevel();
                     Plugin.Instance.ClearPrefabs();
@@ -696,6 +726,9 @@ namespace MegabonkTogether.Services
                 case GameEvent.GameOver:
                     currentState = State.GameOver;
                     Plugin.Instance.RestoreDeath(true);
+                    // The run is over, but its last checkpoint is kept so the world can be resumed.
+                    try { WorldSaves?.OnSessionEnded(); }
+                    catch (Exception ex) { logger.LogWarning($"Final co-op checkpoint failed: {ex.Message}"); }
                     break;
                 default:
                     logger.LogWarning($"Unhandled client event: {gameEvent}");
@@ -728,7 +761,8 @@ namespace MegabonkTogether.Services
                 case GameEvent.Ready:
                     IGameNetworkMessage message = new ClientInGameReady
                     {
-                        ConnectionId = playerManagerService.GetLocalPlayer().ConnectionId
+                        ConnectionId = playerManagerService.GetLocalPlayer().ConnectionId,
+                        Identity = Configuration.ModConfig.PlayerIdentity.Value
                     };
                     udpClientService.SendToHost(message, LiteNetLib.DeliveryMethod.ReliableOrdered);
                     break;
@@ -1546,15 +1580,18 @@ namespace MegabonkTogether.Services
                 damageSource = damaged.DamageSource
             };
 
+            // BonkLink edition, 2026-09-12: preserve attribution and damage guards on exceptions.
+            var previousDamagePermission = Plugin.Instance.CAN_DAMAGE_ENEMIES;
             Plugin.Instance.CAN_DAMAGE_ENEMIES = true;
             playerManagerService.AddGetNetplayerPositionRequest(damaged.AttackerId);
             trackerService.SetCurrentPlayerId(damaged.AttackerId);
-
-            enemy.Damage(damageContainer);
-
-            trackerService.UnsetCurrentPlayerId();
-            playerManagerService.UnqueueNetplayerPositionRequest();
-            Plugin.Instance.CAN_DAMAGE_ENEMIES = false;
+            try { enemy.Damage(damageContainer); }
+            finally
+            {
+                trackerService.UnsetCurrentPlayerId();
+                playerManagerService.UnqueueNetplayerPositionRequest();
+                Plugin.Instance.CAN_DAMAGE_ENEMIES = previousDamagePermission;
+            }
         }
 
 
@@ -2446,7 +2483,7 @@ namespace MegabonkTogether.Services
             {
                 if (IsSharedExperienceEnabled())
                 {
-                    MyTime.Pause();
+                    PauseForSharedReward();
                     ScreenTextHelper.Show("Waiting for other player(s) choices...", new Vector2(0, -350));
                     RewardFinished();
                 }
@@ -2482,7 +2519,7 @@ namespace MegabonkTogether.Services
                         if (microwave.hasItem && !used.IsMicrowaveAndHaveItem)
                         {
                             microwave.Interact();
-                            MyTime.Pause();
+                            PauseForSharedReward();
                             RewardFinished();
                             ScreenTextHelper.Show("Waiting for other player(s) choices in Microwave...", new Vector2(0, -350));
                             break;
@@ -2492,7 +2529,7 @@ namespace MegabonkTogether.Services
 
                         if (!microwave.hasItem && (GameManager.Instance.player.IsDead() || !microwave.CanInteract() || uniqueItemsInRarity < 2))
                         {
-                            MyTime.Pause();
+                            PauseForSharedReward();
                             RewardFinished();
                             ScreenTextHelper.Show("Waiting for other player(s) choices in Microwave...", new Vector2(0, -350));
                         }
@@ -2508,7 +2545,7 @@ namespace MegabonkTogether.Services
                     {
                         if (GameManager.Instance.player.IsDead())
                         {
-                            MyTime.Pause();
+                            PauseForSharedReward();
                             RewardFinished();
                             ScreenTextHelper.Show("Waiting for other player(s) choices in Balance Shrine...", new Vector2(0, -350));
                         }
@@ -2524,7 +2561,7 @@ namespace MegabonkTogether.Services
                     {
                         if (GameManager.Instance.player.IsDead())
                         {
-                            MyTime.Pause();
+                            PauseForSharedReward();
                             RewardFinished();
                             ScreenTextHelper.Show("Waiting for other player(s) choices in Moai Shrine...", new Vector2(0, -350));
                         }
@@ -2540,7 +2577,7 @@ namespace MegabonkTogether.Services
                     {
                         if (GameManager.Instance.player.IsDead() || !chest.CanAfford())
                         {
-                            MyTime.Pause();
+                            PauseForSharedReward();
                             RewardFinished();
                             ScreenTextHelper.Show("Waiting for other player(s) choices in Chest...", new Vector2(0, -350));
                         }
@@ -2556,7 +2593,7 @@ namespace MegabonkTogether.Services
                     {
                         if (GameManager.Instance.player.IsDead())
                         {
-                            MyTime.Pause();
+                            PauseForSharedReward();
                             RewardFinished();
                             ScreenTextHelper.Show("Waiting for other player(s) choices with Shady Guy...", new Vector2(0, -350));
                         }
@@ -3749,13 +3786,18 @@ namespace MegabonkTogether.Services
         {
             TransitionToState(GameEvent.Loading);
 
+            try { WorldSaves?.PrepareResume((int)runConfig.mapData.eMap, runConfig.stageData?.name ?? ""); }
+            catch (Exception ex) { logger.LogWarning($"Co-op checkpoint lookup failed: {ex.Message}"); }
+
             IGameNetworkMessage message = new RunStarted
             {
                 MapData = (int)runConfig.mapData.eMap,
                 StageData = runConfig.stageData.name,
                 MapTierIndex = runConfig.mapTierIndex,
                 MusicTrackIndex = runConfig.musicTrackIndex,
-                ChallengeName = runConfig.challenge?.name ?? ""
+                ChallengeName = runConfig.challenge?.name ?? "",
+                Seed = playerManagerService.GetSeed(),
+                Scaling = Plugin.Instance.Mode.Scaling,
             };
 
             var isHost = IsServerMode() ?? false;
@@ -3766,6 +3808,12 @@ namespace MegabonkTogether.Services
         }
         private void OnReceivedRunStarted(RunStarted started)
         {
+            if (started.Scaling == null || !started.Scaling.IsValid())
+            {
+                logger.LogError("Host sent invalid lobby scaling; refusing to start the run");
+                return;
+            }
+            Plugin.Instance.Mode.Scaling = started.Scaling;
             var mapData = (Assets.Scripts._Data.MapsAndStages.EMap)started.MapData;
             var stageDataName = started.StageData;
 
@@ -3791,6 +3839,14 @@ namespace MegabonkTogether.Services
             if (currentChallenge != null)
             {
                 runConfig.challenge = currentChallenge;
+            }
+
+            if (started.Seed != 0 && started.Seed != playerManagerService.GetSeed())
+            {
+                // The host is resuming a saved world, so this stage must be generated from its seed.
+                logger.LogInfo($"Adopting the host's run seed {started.Seed} for this stage.");
+                playerManagerService.SetSeed(started.Seed);
+                UnityEngine.Random.InitState(started.Seed);
             }
 
             logger.LogInfo($"Received RunStarted message. Starting new map {mapData} with stage {stageDataName} at index {runConfig.mapTierIndex} with challenge {started.ChallengeName}.");
@@ -4394,6 +4450,30 @@ namespace MegabonkTogether.Services
             Plugin.CAN_SEND_MESSAGES = true;
         }
 
+        /// <summary>
+        /// BonkLink edition, 2026-09-13: pause every screen for a shared reward, but first close
+        /// this player's pause or settings screen. Freezing the world underneath an open settings
+        /// menu left that player unable to act, and the party waiting on a choice they could not make.
+        /// </summary>
+        private void PauseForSharedReward()
+        {
+            try
+            {
+                var pause = UiManager.Instance?.pause;
+                if (pause != null && pause.gameObject.activeInHierarchy)
+                {
+                    logger.LogInfo("Closing the pause screen so this player can take part in the shared reward.");
+                    pause.Resume();
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Could not close the pause screen before a shared reward: {ex.Message}");
+            }
+
+            MyTime.Pause();
+        }
+
         public void RewardFinished()
         {
             IGameNetworkMessage message = new EncounterClosed
@@ -4463,9 +4543,11 @@ namespace MegabonkTogether.Services
 
         private void OnReceivedChangeGold(GoldChanged changed)
         {
+            // BonkLink edition, 2026-09-12: restore state even if inventory changes during a transition.
+            var previous = Plugin.CAN_SEND_MESSAGES;
             Plugin.CAN_SEND_MESSAGES = false;
-            GameManager.Instance.player.inventory.ChangeGold(changed.Amount);
-            Plugin.CAN_SEND_MESSAGES = true;
+            try { GameManager.Instance.player.inventory.ChangeGold(changed.Amount); }
+            finally { Plugin.CAN_SEND_MESSAGES = previous; }
         }
     }
 }

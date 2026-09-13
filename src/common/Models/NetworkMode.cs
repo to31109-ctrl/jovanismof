@@ -18,5 +18,7 @@
         public Role Role { get; set; }
         public string RoomCode { get; set; } = "";
         public bool? EnabledSharedExperience { get; set; } = null;
+        public LobbyScaling Scaling { get; set; } = new();
+        public bool ScalingChosenByHost { get; set; }
     }
 }

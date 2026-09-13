@@ -1,4 +1,6 @@
-﻿using Assets.Scripts._Data.MapsAndStages;
+// BonkLink edition changes, 2026-09-12: bounded snapshot scheduling and corrected match guard.
+using MegabonkTogether.Common.Networking;
+using Assets.Scripts._Data.MapsAndStages;
 using Assets.Scripts.Managers;
 using Il2CppInterop.Runtime;
 using MegabonkTogether.Configuration;
@@ -12,11 +14,11 @@ namespace MegabonkTogether.Scripts
 {
     public class NetworkHandler : MonoBehaviour
     {
-        private const float LOBBY_UPDATE_TICK_RATE = 60f;
+        private const float LOBBY_UPDATE_TICK_RATE = 30f;
         private const float lobbyUpdatetickInterval = 1f / LOBBY_UPDATE_TICK_RATE;
         private float lobbyUpdateAccumulator = 0f;
 
-        private const float ENEMY_UPDATE_TICK_RATE = 40f;
+        private const float ENEMY_UPDATE_TICK_RATE = 20f;
         private const float enemyUpdatetickInterval = 1f / ENEMY_UPDATE_TICK_RATE;
         private float enemyUpdateAccumulator = 0f;
 
@@ -42,6 +44,7 @@ namespace MegabonkTogether.Scripts
         private ISynchronizationService synchronizationService;
         private IWebsocketClientService websocketClientService;
         private IPlayerManagerService playerManagerService;
+        private IWorldSaveService worldSaveService;
 
         public bool? IsConnectedToMatchMaker => isConnectedToMatchMaker;
         public string MatchMakerFailureMessage => matchMakerFailureMessage;
@@ -56,6 +59,7 @@ namespace MegabonkTogether.Scripts
         {
             websocketClientService = Plugin.Services.GetRequiredService<IWebsocketClientService>();
             playerManagerService = Plugin.Services.GetRequiredService<IPlayerManagerService>();
+            worldSaveService = Plugin.Services.GetRequiredService<IWorldSaveService>();
 
             EventManager.SubscribeGameStartedEvents(OnGameStarted);
             EventManager.SubscribePortalOpenedEvents(OnPortalOpened);
@@ -79,52 +83,21 @@ namespace MegabonkTogether.Scripts
 
                 if (hasFoundMatch == null) return;
 
-                if (!hasFoundMatch.HasValue && !hasFoundMatch.Value || synchronizationService.IsLoadingNextLevel()) return;
+                if (hasFoundMatch != true || synchronizationService.IsLoadingNextLevel()) return;
 
                 udpClientService.Poll();
 
                 if (GameManager.Instance == null || GameManager.Instance.player == null || GameManager.Instance.player.inventory == null) return;
 
-                lobbyUpdateAccumulator += Time.deltaTime;
-
+                if (SnapshotSchedule.Due(ref lobbyUpdateAccumulator, Time.unscaledDeltaTime, lobbyUpdatetickInterval))
+                    udpClientService.Update();
                 if (isHost && isGameStarted)
                 {
-                    enemyUpdateAccumulator += Time.deltaTime;
-                    projectileUpdateAccumulator += Time.deltaTime;
-
-                    if (MapController.runConfig.mapData.eMap == EMap.Desert)
-                    {
-                        tumbleWeedUpdateAccumulator += Time.deltaTime;
-                    }
-                }
-
-                // UiManager.Instance.GetComponentInChildren<TargetOfInterestUi>().RefreshPrefabs();
-
-                while (lobbyUpdateAccumulator >= lobbyUpdatetickInterval || enemyUpdateAccumulator >= enemyUpdatetickInterval || projectileUpdateAccumulator >= projectileUpdatetickInterval || tumbleWeedUpdateAccumulator >= tumbleWeedUpdatetickInterval)
-                {
-                    if (lobbyUpdateAccumulator >= lobbyUpdatetickInterval)
-                    {
-                        lobbyUpdateAccumulator -= lobbyUpdatetickInterval;
-                        udpClientService.Update();
-                    }
-
-                    if (isHost && enemyUpdateAccumulator >= enemyUpdatetickInterval)
-                    {
-                        enemyUpdateAccumulator -= enemyUpdatetickInterval;
-                        udpClientService.UpdateEnemies();
-                    }
-
-                    if (isHost && projectileUpdateAccumulator >= projectileUpdatetickInterval)
-                    {
-                        projectileUpdateAccumulator -= projectileUpdatetickInterval;
-                        udpClientService.UpdateProjectiles();
-                    }
-
-                    if (isHost && tumbleWeedUpdateAccumulator >= tumbleWeedUpdatetickInterval)
-                    {
-                        tumbleWeedUpdateAccumulator -= tumbleWeedUpdatetickInterval;
-                        udpClientService.UpdateTumbleWeeds();
-                    }
+                    // BonkLink edition, 2026-09-13: periodic co-op world checkpoints.
+                    worldSaveService?.Tick(Time.unscaledDeltaTime);
+                    if (SnapshotSchedule.Due(ref enemyUpdateAccumulator, Time.deltaTime, enemyUpdatetickInterval)) udpClientService.UpdateEnemies();
+                    if (SnapshotSchedule.Due(ref projectileUpdateAccumulator, Time.deltaTime, projectileUpdatetickInterval)) udpClientService.UpdateProjectiles();
+                    if (MapController.runConfig.mapData.eMap == EMap.Desert && SnapshotSchedule.Due(ref tumbleWeedUpdateAccumulator, Time.deltaTime, tumbleWeedUpdatetickInterval)) udpClientService.UpdateTumbleWeeds();
                 }
             }
             catch (System.Exception ex)
@@ -142,12 +115,10 @@ namespace MegabonkTogether.Scripts
         {
             try
             {
-                Task webSocket = new Task(async () =>
+                _ = MainThreadDispatcher.Run(async () =>
                 {
                     try
                     {
-                        IL2CPP.il2cpp_thread_attach(IL2CPP.il2cpp_domain_get());
-
                         hasFoundMatch = null;
                         IsNetworkInterrupted = false;
                         matchMakerFailureMessage = string.Empty;
@@ -166,7 +137,6 @@ namespace MegabonkTogether.Scripts
                     }
                 });
 
-                webSocket.Start();
             }
             catch (System.Exception ex)
             {
@@ -210,17 +180,12 @@ namespace MegabonkTogether.Scripts
 
             if (websocketClientService != null)
             {
-                Task.Run(async () =>
+                try
                 {
-                    try
-                    {
-                        await websocketClientService.Reset();
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Plugin.Log.LogError($"Error resetting websocket: {ex}");
-                    }
-                }).Wait();
+                    // Reset completes synchronously, so no stale teardown can close a new lobby.
+                    _ = websocketClientService.Reset();
+                }
+                catch (System.Exception ex) { Plugin.Log.LogError($"Error resetting websocket: {ex}"); }
             }
         }
 

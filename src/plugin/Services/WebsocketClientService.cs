@@ -1,4 +1,6 @@
-﻿using MegabonkTogether.Common.Messages;
+// BonkLink edition changes, 2026-09-12: fragmented reads, serialized sends, escaped lobby inputs.
+using MegabonkTogether.Common.Messages;
+using MegabonkTogether.Common.Networking;
 using MegabonkTogether.Common.Messages.WsMessages;
 using MegabonkTogether.Common.Models;
 using MegabonkTogether.Configuration;
@@ -32,6 +34,9 @@ namespace MegabonkTogether.Services
         private string currentServerUrl;
         private uint currentRdvServerPort;
         private bool isMessageLoopRunning = false;
+        private readonly SemaphoreSlim sendLock = new(1, 1);
+        private readonly SemaphoreSlim matchLock = new(1, 1);
+        private int sessionGeneration;
 
 
         public async Task ConnectAndMatchAsync(string serverUrl, uint rdvServerPort, NetworkHandler networkHandler)
@@ -43,6 +48,7 @@ namespace MegabonkTogether.Services
             }
 
             ws = new ClientWebSocket();
+            sessionGeneration++;
             cts = new CancellationTokenSource();
             token = cts.Token;
 
@@ -116,7 +122,7 @@ namespace MegabonkTogether.Services
             var role = Plugin.Instance.Mode.Role;
             var code = Plugin.Instance.Mode.RoomCode;
             var enabledSharedExperience = ModConfig.EnabledSharedExperience.Value;
-            var uri = new System.Uri($"{serverUrl}/ws?friendlies&role={role}&code={code}&name={ModConfig.PlayerName.Value}&enabledSharedExperience={enabledSharedExperience}");
+            var uri = new System.Uri($"{serverUrl.TrimEnd('/')}/ws?friendlies&role={role}&code={Uri.EscapeDataString(code ?? string.Empty)}&name={Uri.EscapeDataString(ModConfig.PlayerName.Value)}&enabledSharedExperience={enabledSharedExperience}");
 
             await ws.ConnectAsync(uri, token);
             networkHandler.OnConnectedToMatchMaker();
@@ -166,11 +172,13 @@ namespace MegabonkTogether.Services
 
         private async Task MessageLoopAsync()
         {
+            var generation = sessionGeneration;
             try
             {
-                while (!token.IsCancellationRequested && ws.State == WebSocketState.Open)
+                while (generation == sessionGeneration && !token.IsCancellationRequested && ws?.State == WebSocketState.Open)
                 {
                     var message = await ReceiveMessageAsync();
+                    if (generation != sessionGeneration) return;
 
                     Plugin.Log.LogInfo($"Received message in loop: {message?.GetType().Name}");
 
@@ -210,11 +218,33 @@ namespace MegabonkTogether.Services
             }
             finally
             {
-                isMessageLoopRunning = false;
+                if (generation == sessionGeneration) isMessageLoopRunning = false;
             }
         }
 
         private async Task HandleMatchInfo(MatchInfo matchInfo)
+        {
+            var cancellation = token;
+            var generation = sessionGeneration;
+            try
+            {
+                await matchLock.WaitAsync(cancellation);
+                try
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    if (generation == sessionGeneration) await HandleMatchInfoSerial(matchInfo);
+                }
+                finally { matchLock.Release(); }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Match setup failed: {ex}");
+                if (generation == sessionGeneration) Plugin.Instance.NetworkHandler.OnNetworkInterrupted("Connection setup failed. Please rejoin.");
+            }
+        }
+
+        private async Task HandleMatchInfoSerial(MatchInfo matchInfo)
         {
             if (udpClientService.HasHandledHost())
             {
@@ -265,7 +295,7 @@ namespace MegabonkTogether.Services
             udpClientService.CancelAnyNatIntroduction();
             Plugin.Instance.NetworkHandler.OnNetworkInterrupted("Host has disconnected");
 
-            _ = Task.Run(async () => //TODO: the task might be usesless now (Was preventing a race condition before)
+            _ = MainThreadDispatcher.Run(async () =>
             {
                 await Task.Delay(100);
                 Plugin.Instance.NetworkHandler.ResetNetworking();
@@ -280,44 +310,26 @@ namespace MegabonkTogether.Services
             udpClientService.RemovePeer(clientDisconnected.ClientConnectionId);
         }
 
-        public async Task Reset()
+        public Task Reset()
         {
-            try
-            {
-                isMessageLoopRunning = false;
-
-                cts?.Cancel();
-
-                if (ws != null && ws.State == WebSocketState.Open)
-                {
-                    try
-                    {
-                        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Starting P2P", CancellationToken.None);
-                    }
-                    catch (WebSocketException wsEx)
-                    {
-                        Plugin.Log.LogWarning($"WebSocket already closed by remote: {wsEx.Message}");
-                    }
-
-                    ws.Dispose();
-                    ws = null;
-                }
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Error while closing WebSocket: {ex.Message}");
-            }
-            finally
-            {
-                cts?.Dispose();
-                cts = null;
-
-                connectionId = 0;
-                currentServerUrl = null;
-                currentRdvServerPort = 0;
-            }
+            // BonkLink edition, 2026-09-13: complete teardown before another connection can start.
+            sessionGeneration++;
+            isMessageLoopRunning = false;
+            var oldCancellation = cts;
+            var oldSocket = ws;
+            cts = null;
+            ws = null;
+            oldCancellation?.Cancel();
+            oldSocket?.Abort();
+            oldSocket?.Dispose();
+            oldCancellation?.Dispose();
+            gameStartingResponseTcs?.TrySetCanceled();
+            gameStartingResponseTcs = null;
+            connectionId = 0;
+            currentServerUrl = null;
+            currentRdvServerPort = 0;
+            return Task.CompletedTask;
         }
-
         public async Task SendRunStatistics(int playerCount, string mapName, int stageLevel, List<string> characters)
         {
             if (ws == null || ws.State != WebSocketState.Open)
@@ -369,14 +381,18 @@ namespace MegabonkTogether.Services
         {
             var bytes = MemoryPackSerializer.Serialize(msg);
             var segment = new ReadOnlyMemory<byte>(bytes);
-            await ws.SendAsync(segment, WebSocketMessageType.Binary, true, cts.Token);
+            var activeSocket = ws;
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(15));
+            await sendLock.WaitAsync(deadline.Token);
+            try { await activeSocket.SendAsync(segment, WebSocketMessageType.Binary, true, deadline.Token); }
+            finally { sendLock.Release(); }
         }
 
         private async Task<IWsMessage> ReceiveMessageAsync()
         {
-            var buffer = new byte[4096];
-            var result = await ws.ReceiveAsync(buffer, cts.Token);
-            return MemoryPackSerializer.Deserialize<IWsMessage>(buffer.AsSpan(0, result.Count));
+            var buffer = await SocketFrames.ReadBinary(ws, cts.Token);
+            return MemoryPackSerializer.Deserialize<IWsMessage>(buffer);
         }
     }
 }

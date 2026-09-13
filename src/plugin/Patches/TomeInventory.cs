@@ -19,6 +19,7 @@ namespace MegabonkTogether.Patches
         [HarmonyPatch(nameof(TomeInventory.AddTome))]
         public static void AddTome_Postfix(TomeInventory __instance, TomeData tomeData, Il2CppSystem.Collections.Generic.List<StatModifier> upgradeOffer, ERarity rarity)
         {
+            MonoMod.Utils.DynamicData.For(__instance).Set($"bonklink.tomeRarity.{(int)tomeData.eTome}", (int)rarity);
             if (!synchronizationService.HasNetplaySessionStarted())
             {
                 return;

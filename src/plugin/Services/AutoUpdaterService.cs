@@ -44,6 +44,13 @@ namespace MegabonkTogether.Common
         bool IsAnUpdateAvailable();
         string GetDownloadedVersion();
         public void LaunchUpdaterOnExit(string pluginDirectory);
+        /// <summary>Where this plugin's own files live, which is what an update replaces.</summary>
+        string GetPluginDirectory();
+        /// <summary>
+        /// Stages an archive that did not come from a release feed, so it is applied on quit by
+        /// the same mechanism. Used when the host hands its build straight to a client.
+        /// </summary>
+        bool StageUpdateArchive(byte[] archive, string version, string fileName);
         public string GetLatestVersion();
         public bool IsCustomBuild();
         public string GetCurrentVersion();
@@ -55,8 +62,10 @@ namespace MegabonkTogether.Common
         private const string UPDATE_FILE_PREFIX = ".update_download_";
         private static readonly TimeSpan UPDATE_CHECK_COOLDOWN = TimeSpan.FromMinutes(5);
 
-        private const string GITHUB_OWNER = "Fcornaire";
-        private const string GITHUB_REPO = "megabonk-together";
+        // BonkLink edition, 2026-09-13: the repository is configuration, not a constant, so a
+        // fork updates its own players instead of replacing itself with somebody else's build.
+        private static string Repository => (Configuration.ModConfig.UpdateRepository?.Value ?? "").Trim().Trim('/');
+        private static bool HasRepository => System.Text.RegularExpressions.Regex.IsMatch(Repository, @"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$");
         private string currentVersion;
         private string pluginPath;
         private ManualLogSource logger;
@@ -137,6 +146,13 @@ namespace MegabonkTogether.Common
 
         public async Task<bool> CheckAndUpdate()
         {
+            // With no repository configured there is nowhere legitimate to update from, and
+            // silence is the right behaviour: this must never reach out on its own guess.
+            if (!HasRepository)
+            {
+                return false;
+            }
+
             if (isUpdateAvailable)
             {
                 return true;
@@ -200,7 +216,7 @@ namespace MegabonkTogether.Common
 
         private async Task<GitHubRelease> GetLatestRelease()
         {
-            var url = $"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest";
+            var url = $"https://api.github.com/repos/{Repository}/releases/latest";
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             using var response = await httpClient.SendAsync(request);
 
@@ -236,7 +252,7 @@ namespace MegabonkTogether.Common
             try
             {
                 var asset = release.Assets.FirstOrDefault(a =>
-                    Regex.IsMatch(a.Name ?? string.Empty, @"^Megabonk\-Together\-\d+\.\d+\.\d+\.zip$", RegexOptions.IgnoreCase)); //this should pick Megabonk-Together-X.Y.Z.zip
+                    Regex.IsMatch(a.Name ?? string.Empty, @"^[A-Za-z0-9._\-]+\-\d+\.\d+\.\d+\.zip$", RegexOptions.IgnoreCase)); //e.g. BonkLink-5.2.0.zip
 
                 if (asset == null)
                 {
@@ -282,7 +298,7 @@ namespace MegabonkTogether.Common
             {
                 logger.LogInfo($"CHANGELOG.toml not found locally, fetching from GitHub for version {version}...");
 
-                var url = $"https://raw.githubusercontent.com/{GITHUB_OWNER}/{GITHUB_REPO}/{version}/src/plugin/CHANGELOG.toml";
+                var url = $"https://raw.githubusercontent.com/{Repository}/{version}/src/plugin/CHANGELOG.toml";
 
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 using var response = await httpClient.SendAsync(request);
@@ -291,7 +307,7 @@ namespace MegabonkTogether.Common
                 {
                     logger.LogWarning($"Could not fetch CHANGELOG.toml from {version} tag, trying main branch...");
 
-                    url = $"https://raw.githubusercontent.com/{GITHUB_OWNER}/{GITHUB_REPO}/main/src/plugin/CHANGELOG.toml";
+                    url = $"https://raw.githubusercontent.com/{Repository}/main/src/plugin/CHANGELOG.toml";
                     using var fallbackRequest = new HttpRequestMessage(HttpMethod.Get, url);
                     using var fallbackResponse = await httpClient.SendAsync(fallbackRequest);
 
@@ -500,9 +516,56 @@ namespace MegabonkTogether.Common
             }
         }
 
+        public string GetPluginDirectory()
+        {
+            var path = pluginPath;
+            if (string.IsNullOrEmpty(path)) path = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            return Path.GetDirectoryName(path);
+        }
+
+        public bool StageUpdateArchive(byte[] archive, string version, string fileName)
+        {
+            if (archive == null || archive.Length == 0) return false;
+
+            try
+            {
+                if (!IsNewerVersion(version, currentVersion ?? MyPluginInfo.PLUGIN_VERSION))
+                {
+                    logger.LogInfo($"Ignoring an offered build {version}; {currentVersion} is not older.");
+                    return false;
+                }
+
+                var pluginDirectory = GetPluginDirectory();
+                CleanupOldUpdateFiles(pluginDirectory);
+
+                var safeName = Path.GetFileName(fileName);
+                if (string.IsNullOrEmpty(safeName) || !safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    safeName = $"MegabonkTogether-{version}.zip";
+                }
+
+                var stagedPath = Path.Combine(pluginDirectory, UPDATE_FILE_PREFIX + safeName);
+                File.WriteAllBytes(stagedPath, archive);
+
+                GenerateUpdaterBatchFile(pluginDirectory, version);
+
+                isUpdateAvailable = true;
+                downloadedVersion = version;
+                latestVersion = version;
+
+                logger.LogInfo($"Update {version} staged from the host. It is applied when the game is closed.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"Could not stage the offered update: {ex}");
+                return false;
+            }
+        }
+
         public void LaunchUpdaterOnExit(string pluginDirectory)
         {
-            if (isCustomBuild)
+            if (isCustomBuild && !isUpdateAvailable)
             {
                 logger.LogInfo($"{buildType} build - updater launch is disabled");
                 return;

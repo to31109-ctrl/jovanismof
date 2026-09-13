@@ -67,6 +67,11 @@ namespace MegabonkTogether.Services
         private static event Action<AddXp> AddXpEvents;
         private static event Action<CloseEncounter> CloseEncounterEvents;
         private static event Action<GoldChanged> GoldChangedEvents;
+        // BonkLink edition, 2026-09-13: host to client co-op checkpoint restore.
+        private static event Action<WorldRestore> WorldRestoreEvents;
+        // BonkLink edition, 2026-09-13: the host handing its build to a client.
+        private static event Action<ModUpdateOffer> ModUpdateOfferEvents;
+        private static event Action<ModUpdateChunk> ModUpdateChunkEvents;
 
         public static void OnSpawnedObject(SpawnedObject spawnedObject)
         {
@@ -448,6 +453,35 @@ namespace MegabonkTogether.Services
             MainThreadDispatcher.Enqueue(() =>
             {
                 RetargetedEnemiesEvents?.Invoke(retargetedEnemies);
+            });
+        }
+
+        public static void SubscribeModUpdateOfferEvents(Action<ModUpdateOffer> action)
+        {
+            ModUpdateOfferEvents += action;
+        }
+        public static void OnModUpdateOffer(ModUpdateOffer offer)
+        {
+            MainThreadDispatcher.Enqueue(() => ModUpdateOfferEvents?.Invoke(offer));
+        }
+        public static void SubscribeModUpdateChunkEvents(Action<ModUpdateChunk> action)
+        {
+            ModUpdateChunkEvents += action;
+        }
+        public static void OnModUpdateChunk(ModUpdateChunk chunk)
+        {
+            MainThreadDispatcher.Enqueue(() => ModUpdateChunkEvents?.Invoke(chunk));
+        }
+
+        public static void SubscribeWorldRestoreEvents(Action<WorldRestore> action)
+        {
+            WorldRestoreEvents += action;
+        }
+        public static void OnWorldRestore(WorldRestore restore)
+        {
+            MainThreadDispatcher.Enqueue(() =>
+            {
+                WorldRestoreEvents?.Invoke(restore);
             });
         }
 

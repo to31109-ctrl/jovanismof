@@ -16,6 +16,9 @@ namespace MegabonkTogether.Services
     {
         public IEnumerable<(uint, uint)> ReTargetEnemies(uint oldTargetId, IEnumerable<uint> currentPlayersExcludingOldOneId);
         public IEnumerable<EnemyModel> GetAllEnemiesDeltaAndUpdate();
+        // BonkLink edition, 2026-09-13: co-op world checkpoints read and rebuild the live enemy set.
+        public IEnumerable<KeyValuePair<uint, Enemy>> GetAllSpawnedEnemies();
+        public void ReserveEnemyIds(uint highestUsedId);
         public uint AddSpawnedEnemy(Enemy enemy);
         public void SetSpawnedEnemy(uint enemyId, Enemy enemy);
         public Enemy GetEnemyById(uint id);
@@ -34,7 +37,9 @@ namespace MegabonkTogether.Services
     internal class EnemyManagerService : IEnemyManagerService
     {
         private readonly ConcurrentDictionary<uint, Enemy> spawnedEnemies = [];
-        private Dictionary<uint, EnemyModel> previousSpawnedEnemiesDelta = [];
+        // BonkLink edition, 2026-09-12: compare against sent state and periodically repair packet loss.
+        private readonly MegabonkTogether.Common.Networking.SnapshotBaseline<uint, EnemyModel> enemyBaseline = new();
+        private double nextFullSnapshot;
         private readonly ConcurrentDictionary<Enemy, string> reviverEnemies_NetplayNames = [];
         private readonly ConcurrentDictionary<uint, int> reviverSpawnCountPerOwner = [];
         private uint currentEnemyId = 0; //TODO: concurrency?
@@ -49,6 +54,16 @@ namespace MegabonkTogether.Services
         public IEnumerable<(uint, uint)> ReTargetEnemies(uint oldTargetId, IEnumerable<uint> currentPlayersAliveExcludingOldOneId)
         {
             var retargetedEnemies = new List<(uint, uint)>();
+
+            // BonkLink edition, 2026-09-13: when the last living player dies there is nobody left
+            // to hand the enemies to. Picking a target from an empty set threw out of the native
+            // death callback and left the rest of the death handling unfinished.
+            var candidates = currentPlayersAliveExcludingOldOneId?.ToArray() ?? [];
+            if (candidates.Length == 0)
+            {
+                return retargetedEnemies;
+            }
+
             var oldTargetEnemies = spawnedEnemies.Values.Where(enemy =>
             {
                 var currentTargetid = DynamicData.For(enemy).Get<uint?>("targetId");
@@ -62,8 +77,7 @@ namespace MegabonkTogether.Services
 
             foreach (var oldEnemy in oldTargetEnemies)
             {
-                var randomIndex = Random.Range(0, currentPlayersAliveExcludingOldOneId.Count());
-                var randomNewTargetId = currentPlayersAliveExcludingOldOneId.ElementAt(randomIndex);
+                var randomNewTargetId = candidates[Random.Range(0, candidates.Length)];
 
                 DynamicData.For(oldEnemy).Set("targetId", randomNewTargetId);
                 var enemyId = GetEnemyByReference(oldEnemy).Key;
@@ -107,25 +121,10 @@ namespace MegabonkTogether.Services
                 currentEnemies[id] = enemy.ToModel(id);
             }
 
-            if (previousSpawnedEnemiesDelta.Count == 0)
-            {
-                previousSpawnedEnemiesDelta = currentEnemies;
-                return currentEnemies.Values;
-            }
-
-            var deltas = new List<EnemyModel>();
-
-            foreach (var current in currentEnemies.Values)
-            {
-                if (!previousSpawnedEnemiesDelta.TryGetValue(current.Id, out var previous) || HasDelta(previous, current))
-                {
-                    deltas.Add(current);
-                }
-            }
-
-            previousSpawnedEnemiesDelta = currentEnemies;
-
-            return deltas;
+            var now = Time.realtimeSinceStartupAsDouble;
+            bool refresh = now >= nextFullSnapshot;
+            if (refresh) nextFullSnapshot = now + 1.0;
+            return enemyBaseline.Collect(currentEnemies, HasDelta, refresh);
         }
 
         private bool HasDelta(EnemyModel previous, EnemyModel current)
@@ -144,7 +143,21 @@ namespace MegabonkTogether.Services
 
             return positionDelta > POSITION_TRESHOLD ||
                    yawDelta > YAW_TRESHOLD ||
-                   hpDelta > HP_TRESHOLD;
+                   hpDelta >= HP_TRESHOLD;
+        }
+
+        /// <summary>Every enemy the host currently owns, as a stable snapshot safe to enumerate.</summary>
+        public IEnumerable<KeyValuePair<uint, Enemy>> GetAllSpawnedEnemies() => spawnedEnemies.ToArray();
+
+        /// <summary>
+        /// Keeps newly spawned enemies from reusing an id that a restored checkpoint already holds.
+        /// </summary>
+        public void ReserveEnemyIds(uint highestUsedId)
+        {
+            if (highestUsedId > currentEnemyId)
+            {
+                currentEnemyId = highestUsedId;
+            }
         }
 
         public Enemy GetEnemyById(uint id)
@@ -211,7 +224,8 @@ namespace MegabonkTogether.Services
         {
             //spawnedEnemies.Select(Enemy => Enemy.Value).ToList().ForEach(enemy => GameObject.Destroy(enemy.gameObject));
             spawnedEnemies.Clear();
-            previousSpawnedEnemiesDelta = [];
+            enemyBaseline.Clear();
+            nextFullSnapshot = 0;
         }
 
         //TODO: the applied values should be stored in GameBalanceService

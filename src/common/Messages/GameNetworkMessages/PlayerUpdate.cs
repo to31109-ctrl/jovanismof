@@ -21,6 +21,16 @@ namespace MegabonkTogether.Common.Messages
         //public uint Xp { get; set; }
         public uint Shield { get; set; }
         public uint MaxShield { get; set; }
+        // BonkLink edition, 2026-09-13: a player's own gold, experience and level. The host
+        // mirrors remote inventories for display only and those values never reach it, so a
+        // checkpoint taken by the host would otherwise record every remote player as broke.
+        public int Gold { get; set; }
+        public int Xp { get; set; }
+        public int Level { get; set; }
+        public float Overheal { get; set; }
+        public int Banishes { get; set; }
+        public int Refreshes { get; set; }
+        public int Skips { get; set; }
     }
 
     [MemoryPackable]

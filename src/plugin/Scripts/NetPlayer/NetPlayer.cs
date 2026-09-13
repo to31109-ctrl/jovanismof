@@ -188,6 +188,21 @@ namespace MegabonkTogether.Scripts.NetPlayer
             this.Model.name = $"NetPlayer_{connectionId}_{eCharacter}";
             inventory = playerManagerService.GetPlayerInventory(connectionId);
 
+            // BonkLink edition, 2026-09-13: the cached inventory belongs to the character it was
+            // built for. A player who switched would otherwise keep the old one's abilities.
+            if (inventory != null)
+            {
+                ECharacter? cached = null;
+                try { cached = inventory.characterData?.eCharacter; } catch { cached = null; }
+
+                if (cached == null || cached.Value != eCharacter)
+                {
+                    Plugin.Log.LogInfo($"NetPlayer {connectionId} changed character to {eCharacter}; rebuilding their inventory");
+                    playerManagerService.RemovePlayerInventory(connectionId);
+                    inventory = null;
+                }
+            }
+
             if (inventory == null)
             {
                 Plugin.Instance.SavePlayerInventoryActions();

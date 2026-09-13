@@ -1,4 +1,4 @@
-﻿using Assets.Scripts.Managers;
+using Assets.Scripts.Managers;
 using HarmonyLib;
 using MegabonkTogether.Common;
 using MegabonkTogether.Common.Models;
@@ -59,9 +59,10 @@ namespace MegabonkTogether.Patches
                     CoroutineRunner.Instance.Stop(SpawnPlayerPortalPatches.WaitForLobbyCoroutine);
                 }
 
-                if (autoUpdaterService.IsCustomBuild() && hasShownUpdateModal) return;
+                // BonkLink edition, 2026-09-12: honor disabled updates on menu entry too.
+                if (!ModConfig.CheckForUpdates.Value || (autoUpdaterService.IsCustomBuild() && hasShownUpdateModal)) return;
 
-                Task.Run(async () =>
+                MegabonkTogether.Scripts.MainThreadDispatcher.Run(async () =>
                 {
                     await autoUpdaterService.CheckAndUpdate();
 

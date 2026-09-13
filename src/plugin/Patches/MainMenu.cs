@@ -46,7 +46,7 @@ namespace MegabonkTogether.Patches
             customButton.SetMainMenu(__instance);
 
             var textWrapper = go.GetComponent<ButtonTextWrapper>();
-            textWrapper.t_text.text = "TOGETHER!";
+            textWrapper.t_text.text = "JOVANISMOF";
 
             var version = new UnityEngine.GameObject("VersionText");
             version.transform.SetParent(textWrapper.t_text.transform);
@@ -95,7 +95,7 @@ namespace MegabonkTogether.Patches
 
         private static void ShowChangelogModal()
         {
-            Task.Run(async () =>
+            MegabonkTogether.Scripts.MainThreadDispatcher.Run(async () =>
             {
                 try
                 {
@@ -172,7 +172,7 @@ namespace MegabonkTogether.Patches
             if (Plugin.Instance.PlayTogetherButton != null)
             {
                 var textWrapper = Plugin.Instance.PlayTogetherButton.GetComponent<ButtonTextWrapper>();
-                textWrapper.t_text.text = "TOGETHER!";
+                textWrapper.t_text.text = "JOVANISMOF";
             }
         }
     }

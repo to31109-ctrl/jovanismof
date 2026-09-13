@@ -1,12 +1,14 @@
-﻿using Assets.Scripts.Actors.Enemies;
+using Assets.Scripts.Actors.Enemies;
 using Assets.Scripts.Managers;
 using System.Linq;
+using MegabonkTogether.Common.Models;
 
 namespace MegabonkTogether.Services
 {
     public interface IGameBalanceService
     {
         public float GetCreditsTimerMultiplier();
+        public float GetSpawnMultiplier();
         public float GetEnemyHpMultiplier(EEnemyFlag enemyFlag);
         public float GetFreeChestSpawnRateMultiplier();
         public int GetPickupXpValue();
@@ -27,25 +29,13 @@ namespace MegabonkTogether.Services
 
     internal class GameBalanceService(IPlayerManagerService playerManagerService) : IGameBalanceService
     {
-        private const float hpScalingPerAdditionalPlayer = 0.1f;
-        private int PlayersCount => playerManagerService.GetAllPlayersAlive().Count();
+        private LobbyScaling Scaling => Plugin.Instance.Mode.Scaling ?? new LobbyScaling();
+        private int PlayersCount => System.Math.Clamp(playerManagerService.GetAllPlayers().Count(), 1, 5);
         private static int StageIndex => MapController.runConfig?.mapData.stages.IndexOf(MapController.currentStage) ?? 0;
         private const float baseBossLampInitialChargeTimeSeconds = 3.0f;
 
 
-        public int GetMaxEnemiesSpawnable()
-        {
-            if (GameManager.Instance.IsFinalSwarm())
-            {
-                return 400; // Keep the original cap during Final Swarm
-            }
-
-            return GetDifficultyLevelByPlayers() switch
-            {
-                DifficultyLevel.Quad or DifficultyLevel.Five or DifficultyLevel.Six => 600,
-                _ => 500,
-            };
-        }
+        public int GetMaxEnemiesSpawnable() => Scaling.EnemyCap;
 
         public float GetCreditsTimerMultiplier()
         {
@@ -72,29 +62,10 @@ namespace MegabonkTogether.Services
 
         public float GetEnemyHpMultiplier(EEnemyFlag enemyFlag)
         {
-            float baseMultiplier = enemyFlag switch
-            {
-                EEnemyFlag.Boss => 1.2f,
-                EEnemyFlag.Elite => 1.05f,
-                EEnemyFlag.FinalBoss => 1.25f,
-                EEnemyFlag.SummonerMiniboss => 1.1f,
-                EEnemyFlag.AnyBoss => 1.1f,
-                EEnemyFlag.Challenge => 1.15f,
-                _ => 1f
-            };
-
-            float playerScaling = 1f + (PlayersCount - 1) * hpScalingPerAdditionalPlayer;
-
-            float stageMultiplier = StageIndex switch
-            {
-                0 => 1.0f,
-                1 => 1.1f,
-                2 => 1.2f,
-                _ => 1.0f
-            };
-
-            return baseMultiplier * playerScaling * stageMultiplier;
+            var boss = (enemyFlag & EEnemyFlag.AnyBoss) != 0 || enemyFlag == EEnemyFlag.Boss || enemyFlag == EEnemyFlag.FinalBoss;
+            return LobbyScaling.Multiplier(PlayersCount, boss ? Scaling.BossHealthPerPlayer : Scaling.EnemyHealthPerPlayer);
         }
+        public float GetSpawnMultiplier() => LobbyScaling.Multiplier(PlayersCount, Scaling.SpawnsPerPlayer);
 
         public float GetFreeChestSpawnRateMultiplier()
         {
@@ -176,3 +147,4 @@ namespace MegabonkTogether.Services
 
     }
 }
+

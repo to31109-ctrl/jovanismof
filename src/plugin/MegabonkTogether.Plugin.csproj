@@ -2,9 +2,14 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
+    <!-- The assembly name and plugin GUID are pinned. The GUID decides the BepInEx config
+         file name, which holds each player's PlayerIdentity, and identity is what a saved
+         world matches players by: renaming it would make every world forget everyone. -->
     <AssemblyName>MegabonkTogether</AssemblyName>
-    <Product>MegabonkTogether</Product>
-    <Version>5.1.0</Version>
+    <Product>JOVANISMOF</Product>
+    <BepInExPluginGuid>MegabonkTogether</BepInExPluginGuid>
+    <BepInExPluginName>JOVANISMOF</BepInExPluginName>
+    <Version>5.1.1</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
     <RestoreAdditionalProjectSources>

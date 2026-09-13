@@ -1,4 +1,7 @@
 ﻿using Assets.Scripts.Settings___Saves.SaveFiles;
+using Microsoft.Extensions.DependencyInjection;
+using MegabonkTogether.Services;
+using System.Collections.Generic;
 using MegabonkTogether.Common.Models;
 using MegabonkTogether.Configuration;
 using MegabonkTogether.Helpers;
@@ -41,6 +44,19 @@ namespace MegabonkTogether.Scripts
         private GameObject netplayOptionsTitle;
         private CustomButton netplayOptionsBackButton;
         private GameObject sharedExpToggleSetting;
+        private GameObject resumeWorldToggleSetting;
+        private GameObject worldPickerSetting;
+        private TextMeshProUGUI worldPickerStatusText;
+        private CustomButton worldPickerLeftButton;
+        private CustomButton worldPickerRightButton;
+        private readonly List<System.Guid> worldChoices = new();
+        private readonly List<string> worldLabels = new();
+        private int worldChoiceIndex;
+        private GameObject scalingPanel;
+        private LobbyScaling scalingDraft;
+        private TextMeshProUGUI resumeWorldToggleStatusText;
+        private CustomButton resumeWorldToggleLeftButton;
+        private CustomButton resumeWorldToggleRightButton;
         private CustomButton sharedExpToggleLeftButton;
         private CustomButton sharedExpToggleRightButton;
         private TextMeshProUGUI sharedExpToggleStatusText;
@@ -338,6 +354,238 @@ namespace MegabonkTogether.Scripts
             }
         }
 
+        /// <summary>
+        /// BonkLink edition, 2026-09-13: choose between carrying on the saved co-op world and
+        /// starting a fresh one, without editing a configuration file. Turn it off to begin a new
+        /// world with different people; the previous world stays on disk either way.
+        /// </summary>
+        private void CreateResumeWorldToggle()
+        {
+            var mainMenu = Plugin.Instance.GetMainMenu();
+            var settings = mainMenu.settings.GetComponent<Settings>();
+            var settingPrefab = settings.GetSettingPrefab(SettingType.Enum);
+
+            resumeWorldToggleSetting = GameObject.Instantiate(settingPrefab, panel.transform);
+
+            var rectTransform = resumeWorldToggleSetting.GetComponent<RectTransform>();
+            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.anchoredPosition = new Vector2(0, -120);
+            rectTransform.sizeDelta = new Vector2(700, 60);
+
+            var textComponents = Il2CppFindHelper.RuntimeGetComponentsInChildren<TextMeshProUGUI>(resumeWorldToggleSetting);
+            foreach (var textComp in textComponents)
+            {
+                if (textComp.name.StartsWith("Text"))
+                {
+                    textComp.text = "Continue Saved Co-op World\nON: pick up your last run on this stage\nOFF: start a fresh world";
+                    textComp.fontSize = 18;
+                    textComp.enableWordWrapping = false;
+                }
+                else if (textComp.name.StartsWith("StatusText"))
+                {
+                    resumeWorldToggleStatusText = textComp;
+                    resumeWorldToggleStatusText.gameObject.SetActive(true);
+                    UpdateResumeWorldToggleStatus();
+                }
+            }
+
+            var buttons = Il2CppFindHelper.RuntimeGetComponentsInChildren<UnityEngine.UI.Button>(resumeWorldToggleSetting);
+            foreach (var btn in buttons)
+            {
+                if (btn.name == "B_Left")
+                {
+                    var origButton = btn.GetComponent<MyButtonNormal>();
+                    if (origButton != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(origButton);
+                    }
+
+                    btn.onClick = new();
+
+                    resumeWorldToggleLeftButton = btn.gameObject.AddComponent<CustomButton>();
+                    resumeWorldToggleLeftButton.SetOnClickAction(OnResumeWorldToggleLeftClicked);
+                }
+                else if (btn.name == "B_Right")
+                {
+                    var origButton = btn.GetComponent<MyButtonNormal>();
+                    if (origButton != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(origButton);
+                    }
+
+                    btn.onClick = new();
+
+                    resumeWorldToggleRightButton = btn.gameObject.AddComponent<CustomButton>();
+                    resumeWorldToggleRightButton.SetOnClickAction(OnResumeWorldToggleRightClicked);
+                }
+            }
+
+            resumeWorldToggleSetting.SetActive(false);
+        }
+
+        private void OnResumeWorldToggleLeftClicked()
+        {
+            AudioManager.Instance.PlaySfx(AudioManager.Instance.uiClick.sounds[0]);
+            ToggleResumeWorldOption(false);
+        }
+
+        private void OnResumeWorldToggleRightClicked()
+        {
+            AudioManager.Instance.PlaySfx(AudioManager.Instance.uiClick.sounds[0]);
+            ToggleResumeWorldOption(true);
+        }
+
+        private void ToggleResumeWorldOption(bool isEnabled)
+        {
+            ModConfig.ResumeLastWorld.Value = isEnabled;
+            ModConfig.Save();
+            UpdateResumeWorldToggleStatus();
+        }
+
+        private void UpdateResumeWorldToggleStatus()
+        {
+            if (resumeWorldToggleStatusText != null)
+            {
+                resumeWorldToggleStatusText.text = ModConfig.ResumeLastWorld.Value ? "ON" : "OFF";
+                resumeWorldToggleStatusText.color = ModConfig.ResumeLastWorld.Value ? Color.green : Color.red;
+            }
+        }
+
+        /// <summary>
+        /// BonkLink edition, 2026-09-13: choose, before hosting, whether to continue one of the
+        /// saved co-op worlds or begin a new one. A new world starts everybody fresh. Continuing a
+        /// world gives back the character each returning player last had on it, while anyone who
+        /// has not played that world, or who picks a character they have not used there, starts
+        /// fresh alongside them.
+        /// </summary>
+        private void CreateWorldPicker()
+        {
+            var mainMenu = Plugin.Instance.GetMainMenu();
+            var settings = mainMenu.settings.GetComponent<Settings>();
+            var settingPrefab = settings.GetSettingPrefab(SettingType.Enum);
+
+            worldPickerSetting = GameObject.Instantiate(settingPrefab, panel.transform);
+
+            var rectTransform = worldPickerSetting.GetComponent<RectTransform>();
+            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.anchoredPosition = new Vector2(0, 130f);
+            rectTransform.sizeDelta = new Vector2(760, 60);
+
+            var textComponents = Il2CppFindHelper.RuntimeGetComponentsInChildren<TextMeshProUGUI>(worldPickerSetting);
+            foreach (var textComp in textComponents)
+            {
+                if (textComp.name.StartsWith("Text"))
+                {
+                    textComp.text = "World to host";
+                    textComp.fontSize = 20;
+                    textComp.enableWordWrapping = false;
+                }
+                else if (textComp.name.StartsWith("StatusText"))
+                {
+                    worldPickerStatusText = textComp;
+                    worldPickerStatusText.gameObject.SetActive(true);
+                    worldPickerStatusText.fontSize = 18;
+                    worldPickerStatusText.enableWordWrapping = false;
+                }
+            }
+
+            var buttons = Il2CppFindHelper.RuntimeGetComponentsInChildren<UnityEngine.UI.Button>(worldPickerSetting);
+            foreach (var btn in buttons)
+            {
+                if (btn.name == "B_Left")
+                {
+                    var origButton = btn.GetComponent<MyButtonNormal>();
+                    if (origButton != null) UnityEngine.Object.DestroyImmediate(origButton);
+                    btn.onClick = new();
+                    worldPickerLeftButton = btn.gameObject.AddComponent<CustomButton>();
+                    worldPickerLeftButton.SetOnClickAction(OnWorldPickerLeftClicked);
+                }
+                else if (btn.name == "B_Right")
+                {
+                    var origButton = btn.GetComponent<MyButtonNormal>();
+                    if (origButton != null) UnityEngine.Object.DestroyImmediate(origButton);
+                    btn.onClick = new();
+                    worldPickerRightButton = btn.gameObject.AddComponent<CustomButton>();
+                    worldPickerRightButton.SetOnClickAction(OnWorldPickerRightClicked);
+                }
+            }
+
+            RefreshWorldChoices();
+            worldPickerSetting.SetActive(false);
+        }
+
+        private void OnWorldPickerLeftClicked() => StepWorldChoice(-1);
+
+        private void OnWorldPickerRightClicked() => StepWorldChoice(1);
+
+        private void StepWorldChoice(int direction)
+        {
+            if (worldChoices.Count == 0) return;
+
+            AudioManager.Instance.PlaySfx(AudioManager.Instance.uiClick.sounds[0]);
+            worldChoiceIndex = (worldChoiceIndex + direction + worldChoices.Count) % worldChoices.Count;
+            ApplyWorldChoice();
+        }
+
+        /// <summary>Rebuilds the list of worlds, keeping the current choice selected if it survives.</summary>
+        private void RefreshWorldChoices()
+        {
+            try
+            {
+                var service = Plugin.Services.GetService<IWorldSaveService>();
+                var previous = worldChoices.Count > worldChoiceIndex ? worldChoices[worldChoiceIndex] : System.Guid.Empty;
+
+                worldChoices.Clear();
+                worldChoices.Add(System.Guid.Empty); // a new world always comes first
+                worldLabels.Clear();
+                worldLabels.Add("New World (everyone starts fresh)");
+
+                foreach (var world in service?.ListWorlds() ?? new List<Common.Persistence.WorldSave>())
+                {
+                    worldChoices.Add(world.WorldId);
+                    worldLabels.Add(DescribeWorld(world));
+                }
+
+                worldChoiceIndex = System.Math.Max(0, worldChoices.IndexOf(previous));
+                ApplyWorldChoice();
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not list the saved co-op worlds: {ex.Message}");
+            }
+        }
+
+        private string DescribeWorld(Common.Persistence.WorldSave world)
+        {
+            var minutes = (int)(world.ElapsedSeconds / 60);
+            var label = $"{world.Name} - {minutes}m - {world.Players.Count} player(s)";
+
+            var mine = world.FindMostRecent(ModConfig.PlayerIdentity.Value ?? "");
+            label += mine != null ? $" - you: {(ECharacter)mine.Character}" : " - you: new";
+
+            return label;
+        }
+
+        private void ApplyWorldChoice()
+        {
+            if (worldChoices.Count == 0) return;
+
+            var chosen = worldChoices[worldChoiceIndex];
+
+            try { Plugin.Services.GetService<IWorldSaveService>().SelectedWorldId = chosen; }
+            catch (System.Exception ex) { Plugin.Log.LogWarning($"Could not select a co-op world: {ex.Message}"); }
+
+            if (worldPickerStatusText != null)
+            {
+                worldPickerStatusText.text = worldLabels[worldChoiceIndex];
+                worldPickerStatusText.color = chosen == System.Guid.Empty ? Color.white : Color.green;
+            }
+        }
+
         private void CreateNetplayOptionsUI()
         {
             netplayOptionsTitle = new GameObject("NetplayOptionsTitle");
@@ -360,6 +608,8 @@ namespace MegabonkTogether.Scripts
 
             CreateSaveToggle();
             CreateSharedExpToggle();
+            CreateResumeWorldToggle();
+            CreateWorldPicker();
 
             var backButtonObj = GameObject.Instantiate(mainMenu.btnPlay.gameObject);
             backButtonObj.transform.SetParent(panel.transform, false);
@@ -884,6 +1134,90 @@ namespace MegabonkTogether.Scripts
 
         private void OnHostClicked()
         {
+            UpdateFriendliesUI(false);
+            if (scalingPanel != null) UnityEngine.Object.DestroyImmediate(scalingPanel);
+            // IL2CPP has no GameObject(string, params Type[]) constructor: calling it throws at
+            // runtime, which is what stopped the Host button from doing anything at all.
+            scalingPanel = new GameObject("Host scaling");
+            scalingPanel.AddComponent<RectTransform>();
+            scalingPanel.transform.SetParent(panel.transform, false);
+            var area = scalingPanel.GetComponent<RectTransform>();
+            area.anchorMin = Vector2.zero; area.anchorMax = Vector2.one;
+            area.offsetMin = Vector2.zero; area.offsetMax = Vector2.zero;
+            var source = Plugin.Instance.Mode.Scaling;
+            var chosen = Plugin.Services.GetRequiredService<IWorldSaveService>().SelectedWorldId;
+            foreach (var world in Plugin.Services.GetRequiredService<IWorldSaveService>().ListWorlds())
+                if (world.WorldId == chosen) source = world.Scaling;
+            scalingDraft = new LobbyScaling { EnemyHealthPerPlayer = source.EnemyHealthPerPlayer,
+                BossHealthPerPlayer = source.BossHealthPerPlayer, SpawnsPerPlayer = source.SpawnsPerPlayer, EnemyCap = source.EnemyCap };
+            CreateScalingRow("Mob HP per extra player", 125, () => scalingDraft.EnemyHealthPerPlayer,
+                v => scalingDraft.EnemyHealthPerPlayer = v, false);
+            CreateScalingRow("Boss HP per extra player", 65, () => scalingDraft.BossHealthPerPlayer,
+                v => scalingDraft.BossHealthPerPlayer = v, false);
+            CreateScalingRow("Extra mobs per extra player", 5, () => scalingDraft.SpawnsPerPlayer,
+                v => scalingDraft.SpawnsPerPlayer = v, false);
+            CreateScalingRow("Maximum active mobs", -55, () => scalingDraft.EnemyCap,
+                v => scalingDraft.EnemyCap = (int)v, true);
+            CreateScalingButton("Create lobby", -135, () =>
+            {
+                Plugin.Instance.Mode.Scaling = scalingDraft;
+                Plugin.Instance.Mode.ScalingChosenByHost = true;
+                scalingPanel.SetActive(false);
+                StartConfiguredHost();
+            });
+            CreateScalingButton("Back", -215, () => { scalingPanel.SetActive(false); UpdateFriendliesUI(true); });
+        }
+
+        private void CreateScalingRow(string caption, float y, System.Func<float> read, System.Action<float> write, bool cap)
+        {
+            var prefab = mainMenu.settings.GetComponent<Settings>().GetSettingPrefab(SettingType.Enum);
+            var row = GameObject.Instantiate(prefab, scalingPanel.transform);
+            row.SetActive(true);
+            var rect = row.GetComponent<RectTransform>();
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(.5f, .5f);
+            rect.anchoredPosition = new Vector2(0, y); rect.sizeDelta = new Vector2(760, 55);
+            foreach (var localized in Il2CppFindHelper.RuntimeGetComponentsInChildren<LocalizeStringEvent>(row))
+                UnityEngine.Object.DestroyImmediate(localized);
+            TextMeshProUGUI status = null;
+            foreach (var text in Il2CppFindHelper.RuntimeGetComponentsInChildren<TextMeshProUGUI>(row))
+            {
+                text.fontSize = 20; text.enableWordWrapping = false;
+                if (text.name.StartsWith("StatusText")) { status = text; text.gameObject.SetActive(true); }
+                else if (text.name.StartsWith("Text")) text.text = caption;
+            }
+            void Refresh() { if (status != null) status.text = cap ? $"{read():0}" : $"+{read() * 100:0}%"; }
+            foreach (var button in Il2CppFindHelper.RuntimeGetComponentsInChildren<UnityEngine.UI.Button>(row))
+            {
+                var step = button.name == "B_Left" ? -1 : 1;
+                // Runtime helper: IL2CPP has no generic GetComponents<T>() and it throws here.
+                foreach (var old in button.RuntimeGetComponents<MyButton>()) UnityEngine.Object.DestroyImmediate(old);
+                button.onClick = new();
+                button.gameObject.AddComponent<CustomButton>().SetOnClickAction(() =>
+                {
+                    write(Mathf.Clamp(read() + step * (cap ? 100 : .25f), cap ? 100 : 0, cap ? 2500 : 3));
+                    Refresh();
+                });
+            }
+            Refresh();
+        }
+
+        private void CreateScalingButton(string caption, float y, System.Action action)
+        {
+            var button = GameObject.Instantiate(mainMenu.btnPlay.gameObject, scalingPanel.transform);
+            foreach (var old in Il2CppFindHelper.RuntimeGetComponentsInChildren<MyButton>(button)) UnityEngine.Object.DestroyImmediate(old);
+            foreach (var localized in Il2CppFindHelper.RuntimeGetComponentsInChildren<LocalizeStringEvent>(button)) UnityEngine.Object.DestroyImmediate(localized);
+            foreach (var ui in Il2CppFindHelper.RuntimeGetComponentsInChildren<UnityEngine.UI.Button>(button)) ui.onClick = new();
+            button.AddComponent<CustomButton>().SetOnClickAction(action);
+            var text = button.GetComponent<ButtonTextWrapper>().t_text;
+            text.text = caption; text.fontSize = 32;
+            var rect = button.GetComponent<RectTransform>();
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(.5f, .5f);
+            rect.anchoredPosition = new Vector2(0, y); rect.sizeDelta = new Vector2(330, 65);
+            button.SetActive(true);
+        }
+
+        private void StartConfiguredHost()
+        {
             AudioManager.Instance.PlaySfx(AudioManager.Instance.uiSelect.sounds[0]);
 
             Plugin.Instance.Mode.Mode = NetworkModeType.Friendlies;
@@ -984,6 +1318,12 @@ namespace MegabonkTogether.Scripts
             codeInput.gameObject.SetActive(isVisible);
             joinButton.gameObject.SetActive(isVisible);
             friendliesBackButton.gameObject.SetActive(isVisible);
+
+            if (worldPickerSetting != null)
+            {
+                worldPickerSetting.SetActive(isVisible);
+                if (isVisible) RefreshWorldChoices();
+            }
         }
 
         private void UpdateNetplayOptionsUI(bool isVisible)
@@ -991,6 +1331,7 @@ namespace MegabonkTogether.Scripts
             netplayOptionsTitle.SetActive(isVisible);
             saveToggleSetting.SetActive(isVisible);
             sharedExpToggleSetting.SetActive(isVisible);
+            resumeWorldToggleSetting.SetActive(isVisible);
             netplayOptionsBackButton.gameObject.SetActive(isVisible);
         }
 

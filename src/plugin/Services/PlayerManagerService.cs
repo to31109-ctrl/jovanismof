@@ -49,6 +49,9 @@ namespace MegabonkTogether.Services
         public void ResetForNextLevel();
         public void AddPlayerInventory(uint connectionId, PlayerInventory inventory);
         public PlayerInventory GetPlayerInventory(uint connectionId);
+        // BonkLink edition, 2026-09-13: dropped when a player changes character, so their new
+        // one is not handed the previous character's stats and abilities.
+        public void RemovePlayerInventory(uint connectionId);
 
         public bool IsGameOver();
         public uint? GetRandomPlayerAliveConnectionId();
@@ -395,6 +398,13 @@ namespace MegabonkTogether.Services
                 //Xp = (uint)Math.Max(0, player.inventory.playerXp.xp),
                 Shield = (uint)Math.Max(0, player.inventory.playerHealth.shield),
                 MaxShield = (uint)Math.Max(0, player.inventory.playerHealth.maxShield),
+                Gold = player.inventory.goldInt,
+                Xp = player.inventory.playerXp != null ? player.inventory.playerXp.xp : 0,
+                Level = player.inventory.playerXp != null ? player.inventory.playerXp.level : 0,
+                Overheal = player.inventory.playerHealth.overheal,
+                Banishes = player.inventory.banishes,
+                Refreshes = player.inventory.refreshes,
+                Skips = player.inventory.skips,
                 Inventory = player.inventory.ToInventoryInfos(),
                 Name = Configuration.ModConfig.PlayerName.Value
             };
@@ -464,6 +474,11 @@ namespace MegabonkTogether.Services
         }
 
         //TODO: cleanup inventories at some point
+        public void RemovePlayerInventory(uint connectionId)
+        {
+            playerInventories.TryRemove(connectionId, out _);
+        }
+
         public void AddPlayerInventory(uint connectionId, PlayerInventory inventory)
         {
             if (!playerInventories.TryAdd(connectionId, inventory))

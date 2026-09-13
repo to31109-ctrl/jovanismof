@@ -1,20 +1,24 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Threading.Tasks;
+using MegabonkTogether.Common.Networking;
 using UnityEngine;
 
 namespace MegabonkTogether.Scripts
 {
     public class MainThreadDispatcher : MonoBehaviour
     {
-        private static readonly ConcurrentQueue<Action> _executionQueue = new();
+        private static readonly GameThreadContext context = new();
+        public static bool IsMainThread => context.IsOwner;
+        public void Awake() { context.DrainOne(); }
 
         public void Update()
         {
-            while (_executionQueue.TryDequeue(out var action))
+            for (int count = 0; count < 256; count++)
             {
                 try
                 {
-                    action();
+                    if (!context.DrainOne()) break;
                 }
                 catch (Exception ex)
                 {
@@ -25,7 +29,8 @@ namespace MegabonkTogether.Scripts
 
         public static void Enqueue(Action action)
         {
-            _executionQueue.Enqueue(action);
+            context.Post(_ => action(), null);
         }
+        public static Task Run(Func<Task> action) => context.RunAsync(action);
     }
 }

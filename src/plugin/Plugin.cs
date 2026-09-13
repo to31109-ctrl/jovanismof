@@ -1,4 +1,4 @@
-﻿using Assets.Scripts.Game.MapGeneration.MapEvents;
+using Assets.Scripts.Game.MapGeneration.MapEvents;
 using Assets.Scripts.Inventory__Items__Pickups;
 using Assets.Scripts.Inventory__Items__Pickups.Items;
 using Assets.Scripts.Inventory__Items__Pickups.Stats;
@@ -157,12 +157,16 @@ namespace MegabonkTogether
                 services.AddSingleton<IChangelogService, ChangelogService>();
                 services.AddSingleton<IEncounterService, EncounterService>();
                 services.AddSingleton<ITrackerService, TrackerService>();
+                // BonkLink edition, 2026-09-13: dedicated co-op world checkpoints.
+                services.AddSingleton<IWorldSaveService, WorldSaveService>();
+                services.AddSingleton<IPeerUpdateService, PeerUpdateService>();
             });
 
             Host = builder.Build();
 
 
             _ = Services.GetRequiredService<ISynchronizationService>(); // Initialize SynchronizationService
+            _ = Services.GetRequiredService<IWorldSaveService>(); // Subscribe the co-op checkpoint service before any match starts
             _ = Host.StartAsync(cancellationToken);
             var autoUpdaterService = Services.GetRequiredService<IAutoUpdaterService>();
 
@@ -170,7 +174,7 @@ namespace MegabonkTogether
             {
                 autoUpdaterService.Initialize();
 
-                Task.Run(async () =>
+                MegabonkTogether.Scripts.MainThreadDispatcher.Run(async () =>
                 {
                     try
                     {
@@ -217,9 +221,27 @@ namespace MegabonkTogether
             GameObject.DontDestroyOnLoad(goCameraSwitcher);
             CameraSwitcher = goCameraSwitcher.AddComponent<CameraSwitcher>();
 
+            // The launcher shows a splash while BepInEx generates its interop assemblies, which
+            // happens long before this runs. Dropping this marker is how it learns we are up.
+            try
+            {
+                var readyMarker = System.IO.Path.Combine(BepInEx.Paths.BepInExRootPath, ".jovanismo-ready");
+                System.IO.File.WriteAllText(readyMarker, MyPluginInfo.PLUGIN_VERSION);
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning($"Could not signal the launcher that loading finished: {ex.Message}");
+            }
+
             var goNotificationQueueManager = new GameObject("NotificationQueueManager");
             GameObject.DontDestroyOnLoad(goNotificationQueueManager);
             NotificationQueueManager = goNotificationQueueManager.AddComponent<NotificationQueueManager>();
+#if BONKLINK_TESTING
+            ClassInjector.RegisterTypeInIl2Cpp<BonkLinkSmoke>();
+            var smoke = new GameObject("BonkLinkSmoke");
+            GameObject.DontDestroyOnLoad(smoke);
+            smoke.AddComponent<BonkLinkSmoke>();
+#endif
         }
 
         public void AddPrefab(GameObject prefab)

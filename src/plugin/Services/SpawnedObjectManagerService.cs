@@ -1,4 +1,5 @@
 ﻿using Actors.Enemies;
+using Microsoft.Extensions.DependencyInjection;
 using Assets.Scripts.Inventory__Items__Pickups.Items;
 using MegabonkTogether.Common.Models;
 using MegabonkTogether.Helpers;
@@ -238,6 +239,22 @@ namespace MegabonkTogether.Services
 
         public void RemoveSpawnedObject(uint id, GameObject obj, bool destroyObject = true)
         {
+            // BonkLink edition, 2026-09-13: remember what the players used up, so a resumed
+            // stage does not hand back a chest that has already been opened.
+            if (obj != null)
+            {
+                try
+                {
+                    var position = obj.transform.position;
+                    Plugin.Services.GetService<IWorldSaveService>()?.RecordObjectConsumed(
+                        SynchronizationService.PrefabNameOf(obj), position.x, position.y, position.z);
+                }
+                catch (System.Exception ex)
+                {
+                    Plugin.Log.LogWarning($"Recording a used world object failed: {ex.Message}");
+                }
+            }
+
             spawnedObjects.TryRemove(id, out _);
             if (obj != null && destroyObject)
             {

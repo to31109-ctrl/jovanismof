@@ -210,6 +210,8 @@ namespace MegabonkTogether.Patches.Enemies
             }
 
             var isServer = synchronizationService.IsServerMode() ?? false;
+            // BonkLink edition, 2026-09-12: a client must not echo damage received from the host.
+            if (!isServer && Plugin.Instance.CAN_DAMAGE_ENEMIES) return;
             if (isServer || AllowedDamageSource.Contains(damageContainer.damageSource))
             {
                 synchronizationService.OnEnemyDamaged(__instance, damageContainer);
