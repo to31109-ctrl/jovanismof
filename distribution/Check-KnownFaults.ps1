@@ -109,7 +109,7 @@ foreach ($file in $source) {
 $menu = Join-Path $repo 'src/plugin/Scripts/Modal/NetworkMenuTab.cs'
 if (Test-Path -LiteralPath $menu) {
     $menuText = Get-Content -Raw -LiteralPath $menu
-    foreach ($element in @('worldPickerSetting', 'worldNameRow', 'worldListRoot')) {
+    foreach ($element in @('worldChooseButton.gameObject', 'worldDoneButton.gameObject', 'worldScreenTitle', 'worldNameRow', 'worldListRoot')) {
         if ($menuText -notmatch ([regex]::Escape($element) + '\.SetActive\(\$?false\)')) {
             $faults += "NetworkMenuTab.cs never hides '$element' when it is built, so it shows over the main menu."
         }

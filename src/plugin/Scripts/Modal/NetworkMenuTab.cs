@@ -45,10 +45,11 @@ namespace MegabonkTogether.Scripts
         private CustomButton netplayOptionsBackButton;
         private GameObject sharedExpToggleSetting;
         private GameObject resumeWorldToggleSetting;
-        private GameObject worldPickerSetting;
-        private TextMeshProUGUI worldPickerStatusText;
-        private CustomButton worldPickerLeftButton;
-        private CustomButton worldPickerRightButton;
+        private CustomButton worldChooseButton;
+        private TextMeshProUGUI worldChooseLabel;
+        private CustomButton worldDoneButton;
+        private GameObject worldScreenTitle;
+        private bool worldScreenOpen;
         private readonly List<System.Guid> worldChoices = new();
         private TMP_InputField worldNameInput;
         private GameObject worldNameRow;
@@ -486,67 +487,99 @@ namespace MegabonkTogether.Scripts
         /// has not played that world, or who picks a character they have not used there, starts
         /// fresh alongside them.
         /// </summary>
+        /// <summary>
+        /// The world list is its own screen rather than something laid over Friendlies.
+        /// Friendlies already carries Host, the room code and Join; putting a five-row list on
+        /// top of that left rows sitting behind buttons that swallowed their clicks.
+        /// Friendlies now shows one button saying which world is chosen, and that opens the list.
+        /// </summary>
         private void CreateWorldPicker()
         {
-            var mainMenu = Plugin.Instance.GetMainMenu();
-            var settings = mainMenu.settings.GetComponent<Settings>();
-            var settingPrefab = settings.GetSettingPrefab(SettingType.Enum);
+            worldChooseButton = CreateMenuButton("WorldChooseButton", panel.transform,
+                new Vector2(0f, 150f), new Vector2(620f, 56f), 20f,
+                TextAlignmentOptions.Center, () => ShowWorldScreen(true), out worldChooseLabel);
+            worldChooseButton.gameObject.SetActive(false);
 
-            worldPickerSetting = GameObject.Instantiate(settingPrefab, panel.transform);
-
-            var rectTransform = worldPickerSetting.GetComponent<RectTransform>();
-            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-            rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            rectTransform.anchoredPosition = new Vector2(0, 205f);
-            rectTransform.sizeDelta = new Vector2(760, 50);
-
-            var textComponents = Il2CppFindHelper.RuntimeGetComponentsInChildren<TextMeshProUGUI>(worldPickerSetting);
-            foreach (var textComp in textComponents)
-            {
-                if (textComp.name.StartsWith("Text"))
-                {
-                    textComp.text = "Choose a world";
-                    textComp.fontSize = 20;
-                    textComp.enableWordWrapping = false;
-                }
-                else if (textComp.name.StartsWith("StatusText"))
-                {
-                    // The list below says which world is chosen, so this would only repeat it.
-                    worldPickerStatusText = textComp;
-                    worldPickerStatusText.gameObject.SetActive(false);
-                }
-            }
-
-            var buttons = Il2CppFindHelper.RuntimeGetComponentsInChildren<UnityEngine.UI.Button>(worldPickerSetting);
-            foreach (var btn in buttons)
-            {
-                if (btn.name == "B_Left")
-                {
-                    var origButton = btn.GetComponent<MyButtonNormal>();
-                    if (origButton != null) UnityEngine.Object.DestroyImmediate(origButton);
-                    btn.onClick = new();
-                    worldPickerLeftButton = btn.gameObject.AddComponent<CustomButton>();
-                    worldPickerLeftButton.SetOnClickAction(OnWorldPickerLeftClicked);
-                }
-                else if (btn.name == "B_Right")
-                {
-                    var origButton = btn.GetComponent<MyButtonNormal>();
-                    if (origButton != null) UnityEngine.Object.DestroyImmediate(origButton);
-                    btn.onClick = new();
-                    worldPickerRightButton = btn.gameObject.AddComponent<CustomButton>();
-                    worldPickerRightButton.SetOnClickAction(OnWorldPickerRightClicked);
-                }
-            }
-
+            CreateWorldScreen();
             CreateWorldNameInput();
             CreateWorldList();
 
             RefreshWorldChoices();
-            worldPickerSetting.SetActive(false);
         }
 
-        /// <summary>Lets the host name a new world, so the list is readable instead of five "Co-op world"s.</summary>
+        /// <summary>The list's own screen: a heading, the rows, a name box and a way back.</summary>
+        private void CreateWorldScreen()
+        {
+            worldScreenTitle = new GameObject("WorldScreenTitle");
+            worldScreenTitle.transform.SetParent(panel.transform, false);
+            var titleRect = worldScreenTitle.AddComponent<RectTransform>();
+            titleRect.anchorMin = new Vector2(0.5f, 0.5f);
+            titleRect.anchorMax = new Vector2(0.5f, 0.5f);
+            titleRect.pivot = new Vector2(0.5f, 0.5f);
+            titleRect.anchoredPosition = new Vector2(0f, 250f);
+            titleRect.sizeDelta = new Vector2(700, 60);
+            var titleText = worldScreenTitle.AddComponent<TextMeshProUGUI>();
+            titleText.text = "Choose a World";
+            titleText.alignment = TextAlignmentOptions.Center;
+            titleText.fontSize = 44;
+            titleText.color = Color.white;
+            worldScreenTitle.SetActive(false);
+
+            worldDoneButton = CreateMenuButton("WorldDoneButton", panel.transform,
+                new Vector2(0f, -200f), new Vector2(300f, 60f), 26f,
+                TextAlignmentOptions.Center, () => ShowWorldScreen(false), out var doneLabel);
+            if (doneLabel != null) doneLabel.text = "Back";
+            worldDoneButton.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Swaps between Friendlies and the world list. Everything Friendlies owns is switched
+        /// off while the list is up, so nothing can sit over a row.
+        /// </summary>
+        private void ShowWorldScreen(bool open)
+        {
+            worldScreenOpen = open;
+
+            if (open) AudioManager.Instance.PlaySfx(AudioManager.Instance.uiClick.sounds[0]);
+
+            friendliesTitle.SetActive(!open);
+            hostButton.gameObject.SetActive(!open);
+            codeLabel.SetActive(!open);
+            codeInput.gameObject.SetActive(!open);
+            joinButton.gameObject.SetActive(!open);
+            friendliesBackButton.gameObject.SetActive(!open);
+            if (worldChooseButton != null) worldChooseButton.gameObject.SetActive(!open);
+
+            if (worldScreenTitle != null) worldScreenTitle.SetActive(open);
+            if (worldDoneButton != null) worldDoneButton.gameObject.SetActive(open);
+            if (worldListRoot != null)
+            {
+                worldListRoot.SetActive(open);
+                // Drawn last so nothing left on the panel covers a row.
+                if (open) worldListRoot.transform.SetAsLastSibling();
+            }
+
+            if (open) RefreshWorldChoices();
+            else if (worldNameRow != null) worldNameRow.SetActive(false);
+
+            RefreshChooseButton();
+        }
+
+        /// <summary>Friendlies shows which world is chosen without opening the list.</summary>
+        private void RefreshChooseButton()
+        {
+            // Math.Clamp throws when the lower bound exceeds the upper one, so an empty list
+            // would take the menu down rather than simply showing nothing.
+            if (worldChooseLabel == null || worldChoices.Count == 0 || worldTitles.Count == 0) return;
+            var index = worldChoiceIndex < 0 ? 0 : worldChoiceIndex;
+            if (index >= worldTitles.Count || index >= worldChoices.Count) index = 0;
+            var title = worldTitles[index];
+            worldChooseLabel.text = $"World: {title}";
+            worldChooseLabel.color = worldChoices[index] == System.Guid.Empty
+                ? new Color(0.75f, 0.92f, 1f, 1f)
+                : new Color(0.62f, 1f, 0.68f, 1f);
+        }
+
         private void CreateWorldNameInput()
         {
             worldNameRow = new GameObject("WorldNameInput");
@@ -806,6 +839,12 @@ namespace MegabonkTogether.Scripts
                     continue;
                 }
 
+                if (choice >= worldTitles.Count || choice >= worldLabels.Count)
+                {
+                    row.Root.SetActive(false);
+                    continue;
+                }
+
                 row.Root.SetActive(true);
                 var id = worldChoices[choice];
                 var isNew = id == System.Guid.Empty;
@@ -903,9 +942,11 @@ namespace MegabonkTogether.Scripts
             try { Plugin.Services.GetService<IWorldSaveService>().SelectedWorldId = chosen; }
             catch (System.Exception ex) { Plugin.Log.LogWarning($"Could not select a co-op world: {ex.Message}"); }
 
-            // Naming only makes sense for a world that does not exist yet.
+            // Naming only makes sense for a world that does not exist yet, and only while the
+            // list is actually on screen. Without that second condition this switched itself
+            // back on during setup and floated over the main menu.
             var isNew = chosen == System.Guid.Empty;
-            if (worldNameRow != null) worldNameRow.SetActive(isNew);
+            if (worldNameRow != null) worldNameRow.SetActive(isNew && worldScreenOpen);
 
             // The name travels with the world for its whole life, so it is handed over as soon
             // as the host picks "Create New World" rather than read back later from the menu.
@@ -921,6 +962,7 @@ namespace MegabonkTogether.Scripts
             else if (worldChoiceIndex >= worldListOffset + VisibleWorldRows) worldListOffset = worldChoiceIndex - VisibleWorldRows + 1;
 
             RefreshWorldRows();
+            RefreshChooseButton();
         }
 
         private void CreateNetplayOptionsUI()
@@ -1656,16 +1698,19 @@ namespace MegabonkTogether.Scripts
             joinButton.gameObject.SetActive(isVisible);
             friendliesBackButton.gameObject.SetActive(isVisible);
 
-            // The stepper row is now only the heading above the list.
-            if (worldPickerSetting != null) worldPickerSetting.SetActive(isVisible);
-            if (worldListRoot != null)
+            // The world list is a screen of its own, reached from the button below.
+            if (worldChooseButton != null) worldChooseButton.gameObject.SetActive(isVisible);
+            if (worldScreenTitle != null) worldScreenTitle.SetActive(false);
+            if (worldDoneButton != null) worldDoneButton.gameObject.SetActive(false);
+            if (worldListRoot != null) worldListRoot.SetActive(false);
+            if (worldNameRow != null) worldNameRow.SetActive(false);
+            worldScreenOpen = false;
+
+            if (isVisible)
             {
-                worldListRoot.SetActive(isVisible);
-                // Drawn last so nothing on the panel sits over the rows and swallows a click.
-                if (isVisible) worldListRoot.transform.SetAsLastSibling();
+                RefreshWorldChoices();
+                RefreshChooseButton();
             }
-            if (worldNameRow != null && !isVisible) worldNameRow.SetActive(false);
-            if (isVisible) RefreshWorldChoices();
         }
 
         private void UpdateNetplayOptionsUI(bool isVisible)
