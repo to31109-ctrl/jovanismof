@@ -23,6 +23,12 @@ namespace MegabonkTogether.Configuration
         public static ConfigEntry<bool> ResumeLastWorld { get; private set; }
         public static ConfigEntry<float> CoopAutosaveSeconds { get; private set; }
         public static ConfigEntry<int> CoopWorldsKept { get; private set; }
+        public static ConfigEntry<float> ReviveGhostHealthPercent { get; private set; }
+        public static ConfigEntry<bool> ReviveGhostFlies { get; private set; }
+        public static ConfigEntry<bool> ReviveOnAreaBossDeath { get; private set; }
+        public static ConfigEntry<float> ReviveHoldSeconds { get; private set; }
+        public static ConfigEntry<bool> ReviveNeedsGhost { get; private set; }
+        public static ConfigEntry<bool> ReviveOnNewArea { get; private set; }
         public static ConfigEntry<string> PlayerIdentity { get; private set; }
         public static ConfigEntry<string> UpdateRepository { get; private set; }
         public static ConfigEntry<bool> ShareUpdatesWithPeers { get; private set; }
@@ -95,7 +101,7 @@ namespace MegabonkTogether.Configuration
             CoopAutosaveSeconds = config.Bind(
                 "CoopSaves",
                 "CoopAutosaveSeconds",
-                30f,
+                60f,
                 new ConfigDescription("Seconds between automatic checkpoints. Checkpoints are also written on stage changes, boss deaths and when the session ends.", new AcceptableValueRange<float>(5f, 600f))
             );
             CoopWorldsKept = config.Bind(
@@ -127,6 +133,45 @@ namespace MegabonkTogether.Configuration
                 "PlayerIdentity",
                 "",
                 "Internal, stable id for this installation so a host can give you your own character back when you rejoin. Do not share or edit."
+            );
+
+            ReviveGhostHealthPercent = config.Bind(
+                "Gameplay",
+                "ReviveGhostHealthPercent",
+                25f,
+                new ConfigDescription("How tough the ghost that must be killed to revive a downed player is, as a percentage of the enemy it is built from. It is spawned as a boss, so at 100 percent it also carries boss and player-count health scaling and takes a very long time to kill.", new AcceptableValueRange<float>(1f, 200f))
+            );
+            ReviveGhostFlies = config.Bind(
+                "Gameplay",
+                "ReviveGhostFlies",
+                false,
+                "Let the revive ghost fly. It is built from a flying enemy, and left flying it drifts up and away from the players trying to kill it."
+            );
+            ReviveOnAreaBossDeath = config.Bind(
+                "Gameplay",
+                "ReviveOnAreaBossDeath",
+                true,
+                "Killing the area boss brings back everyone who is down, as a second way out when the ghost cannot be reached."
+            );
+
+            ReviveHoldSeconds = config.Bind(
+                "Gameplay",
+                "ReviveHoldSeconds",
+                5f,
+                new ConfigDescription("Seconds the interact key must be held at a fallen player's coffin to start reviving them. Zero revives on the press, as it used to.", new AcceptableValueRange<float>(0f, 15f))
+            );
+
+            ReviveNeedsGhost = config.Bind(
+                "Gameplay",
+                "ReviveNeedsGhost",
+                false,
+                "Bring back the old revive, where a ghost had to be killed before the fallen player returned. Off by default: it could fail to spawn on a full map and it drifted away from the people fighting it."
+            );
+            ReviveOnNewArea = config.Bind(
+                "Gameplay",
+                "ReviveOnNewArea",
+                true,
+                "Everyone who is down comes back when the party reaches a new area."
             );
 
             if (!Guid.TryParse(PlayerIdentity.Value, out _))

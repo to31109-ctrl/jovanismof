@@ -73,6 +73,20 @@ namespace MegabonkTogether.Scripts
         private void OnGameStarted()
         {
             isGameStarted = true;
+
+            // Reaching a new area brings back anyone still down, so nobody spends the rest of
+            // the run watching. Host only: it is the host that decides a player is alive again.
+            try
+            {
+                if (Configuration.ModConfig.ReviveOnNewArea.Value && (synchronizationService.IsServerMode() ?? false))
+                {
+                    Scripts.Interactables.InteractableReviver.ReviveEveryoneWaiting();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogError($"Reviving players on a new area failed: {ex}");
+            }
         }
 
         public void Update()

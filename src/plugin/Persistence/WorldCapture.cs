@@ -318,9 +318,50 @@ namespace MegabonkTogether.Persistence
             saved.Refreshes = Math.Max(0, saved.Refreshes);
             saved.Skips = Math.Max(0, saved.Skips);
 
+            CaptureStats(save, saved, inventory);
             CaptureWeapons(save, saved, inventory);
             CaptureTomes(save, saved, inventory);
             CaptureItems(save, saved, inventory);
+        }
+
+        /// <summary>
+        /// The upgrade a player picked at every level-up, plus shrines, all live here as
+        /// permanent stat changes. A restored character that keeps its level number but loses
+        /// these is level twenty with a level one body, which is what players saw as their
+        /// stats being wiped.
+        /// </summary>
+        private static void CaptureStats(WorldSave save, SavedPlayer saved, PlayerInventory inventory)
+        {
+            try
+            {
+                var permanent = inventory.statInventory?.permanentChanges;
+                if (permanent == null)
+                {
+                    save.MissingState.Add($"stat upgrades for {saved.Name}");
+                    return;
+                }
+
+                foreach (var entry in permanent)
+                {
+                    if (entry.Value == null) continue;
+                    foreach (var modifier in entry.Value)
+                    {
+                        if (modifier == null) continue;
+                        if (!float.IsFinite(modifier.modification)) continue;
+                        saved.Stats.Add(new SavedModifier
+                        {
+                            Stat = (int)modifier.stat,
+                            Operation = (int)modifier.modifyType,
+                            Value = modifier.modification,
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"World capture: stat upgrades for {saved.Name} unavailable ({ex.Message})");
+                save.MissingState.Add($"stat upgrades for {saved.Name}");
+            }
         }
 
         private static void CaptureWeapons(WorldSave save, SavedPlayer saved, PlayerInventory inventory)

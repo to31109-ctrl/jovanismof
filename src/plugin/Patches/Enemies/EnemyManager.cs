@@ -41,7 +41,7 @@ namespace MegabonkTogether.Patches.Enemies
         /// <returns></returns>
         [HarmonyPrefix]
         [HarmonyPatch(nameof(EnemyManager.SpawnEnemy), [typeof(EnemyData), typeof(int), typeof(bool), typeof(EEnemyFlag), typeof(bool)])]
-        public static bool SpawnEnemy_Prefix(bool forceSpawn, EnemyManager __instance)
+        public static bool SpawnEnemy_Prefix(bool forceSpawn, EEnemyFlag flag, EnemyManager __instance)
         {
             if (!synchronizationService.HasNetplaySessionStarted())
             {
@@ -52,6 +52,22 @@ namespace MegabonkTogether.Patches.Enemies
             if (!isServer)
             {
                 return false;
+            }
+
+            // The revive ghost goes through this same spawner. Refusing it because the map is
+            // full is how a downed player ends up with no ghost at all and no way back, so it
+            // is always let through: it is one enemy, and it is the whole revive mechanic.
+            if (Plugin.Instance != null && Plugin.Instance.CurrentReviver.HasValue)
+            {
+                return true;
+            }
+
+            // A boss is the stage, not part of the crowd. Counting it against the same limit as
+            // trash means a full map silently refuses to spawn it, and the fight the players
+            // walked into never begins.
+            if (flag == EEnemyFlag.Boss || flag == EEnemyFlag.FinalBoss)
+            {
+                return true;
             }
 
             if (!forceSpawn && __instance.numEnemies >= gameBalanceService.GetMaxEnemiesSpawnable())

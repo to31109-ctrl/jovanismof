@@ -34,6 +34,9 @@ namespace MegabonkTogether.Services
         public void SpawnPlayers();
 
         public NetPlayer GetRandomNetPlayer();
+
+        /// <summary>A team-mate who is still up, for a player who has just gone down to watch.</summary>
+        public NetPlayer GetLivingNetPlayer();
         public void AddProjectileToSpawn(uint connectionId);
         public void AddGetNetplayerPosition(uint connectionId);
         public void AddGetNetplayerPositionRequest(uint connectionId);
@@ -301,6 +304,25 @@ namespace MegabonkTogether.Services
         public IEnumerable<NetPlayer> GetAllSpawnedNetPlayers()
         {
             return [.. spawnedPlayers.Values];
+        }
+
+        public NetPlayer GetLivingNetPlayer()
+        {
+            // Watching a corpse is not spectating. A player who is down wants to see someone
+            // who is still playing, so the dead are skipped and only fallen back on when there
+            // is genuinely nobody left standing.
+            var living = spawnedPlayers
+                .Where(p => p.Value != null)
+                .Where(p =>
+                {
+                    var known = GetPlayer(p.Key);
+                    return known == null || known.Hp > 0;
+                })
+                .Select(p => p.Value)
+                .ToArray();
+
+            if (living.Length > 0) return living[UnityEngine.Random.Range(0, living.Length)];
+            return GetRandomNetPlayer();
         }
 
         public NetPlayer GetRandomNetPlayer()

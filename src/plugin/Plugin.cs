@@ -317,11 +317,15 @@ namespace MegabonkTogether
             }
 
             var playerManager = Services.GetService<IPlayerManagerService>();
-            var netPlayer = playerManager.GetRandomNetPlayer();
+            var netPlayer = playerManager.GetLivingNetPlayer();
 
             if (netPlayer != null)
             {
                 CameraSwitcher.SwitchToTarget(netPlayer.ConnectionId);
+            }
+            else
+            {
+                Log.LogInfo("Nobody left standing to spectate; staying on the local player.");
             }
         }
 

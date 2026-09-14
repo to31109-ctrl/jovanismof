@@ -50,6 +50,34 @@ namespace MegabonkTogether.Scripts
         private CustomButton worldPickerLeftButton;
         private CustomButton worldPickerRightButton;
         private readonly List<System.Guid> worldChoices = new();
+        private TMP_InputField worldNameInput;
+        private GameObject worldNameRow;
+        private GameObject worldListRoot;
+        private GameObject worldScrollUp;
+        private GameObject worldScrollDown;
+        private int worldListOffset;
+        private readonly List<string> worldTitles = new();
+        private readonly List<WorldRow> worldRows = new();
+
+        private const float WorldRowWidth = 760f;
+        private const float WorldRowHeight = 56f;
+        private const int VisibleWorldRows = 5;
+        private static readonly Color SelectedRow = new(0.18f, 0.34f, 0.24f, 1f);
+        private static readonly Color UnselectedRow = new(0.16f, 0.17f, 0.21f, 1f);
+
+        /// <summary>One line in the world list.</summary>
+        private sealed class WorldRow
+        {
+            public GameObject Root;
+            public Image Background;
+            public TextMeshProUGUI Title;
+            public TextMeshProUGUI Detail;
+            public GameObject Delete;
+            public TextMeshProUGUI DeleteText;
+        }
+        // Deleting a world throws away a run for everyone who played it, so the first press
+        // only arms it and the second carries it out.
+        private System.Guid worldPendingDelete = System.Guid.Empty;
         private readonly List<string> worldLabels = new();
         private int worldChoiceIndex;
         private GameObject scalingPanel;
@@ -480,16 +508,15 @@ namespace MegabonkTogether.Scripts
             {
                 if (textComp.name.StartsWith("Text"))
                 {
-                    textComp.text = "World to host";
+                    textComp.text = "Choose a world";
                     textComp.fontSize = 20;
                     textComp.enableWordWrapping = false;
                 }
                 else if (textComp.name.StartsWith("StatusText"))
                 {
+                    // The list below says which world is chosen, so this would only repeat it.
                     worldPickerStatusText = textComp;
-                    worldPickerStatusText.gameObject.SetActive(true);
-                    worldPickerStatusText.fontSize = 18;
-                    worldPickerStatusText.enableWordWrapping = false;
+                    worldPickerStatusText.gameObject.SetActive(false);
                 }
             }
 
@@ -514,9 +541,251 @@ namespace MegabonkTogether.Scripts
                 }
             }
 
+            CreateWorldNameInput();
+            CreateWorldList();
+
             RefreshWorldChoices();
             worldPickerSetting.SetActive(false);
         }
+
+        /// <summary>Lets the host name a new world, so the list is readable instead of five "Co-op world"s.</summary>
+        private void CreateWorldNameInput()
+        {
+            worldNameRow = new GameObject("WorldNameInput");
+            worldNameRow.transform.SetParent(panel.transform, false);
+
+            var rect = worldNameRow.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(150f, 90f);
+            rect.sizeDelta = new Vector2(320, 40);
+
+            var image = worldNameRow.AddComponent<Image>();
+            image.color = new Color(0.2f, 0.2f, 0.2f, 1f);
+
+            worldNameInput = worldNameRow.AddComponent<TMP_InputField>();
+            worldNameInput.textComponent = CreateInputText(worldNameRow);
+            worldNameInput.placeholder = CreatePlaceholderText(worldNameRow);
+            worldNameInput.text = "";
+            worldNameInput.characterLimit = 24;
+            worldNameInput.caretWidth = 3;
+            worldNameInput.caretColor = Color.white;
+            worldNameInput.customCaretColor = true;
+            worldNameInput.caretBlinkRate = 0.85f;
+            worldNameInput.selectionColor = new Color(0.65f, 0.8f, 1f, 0.5f);
+            if (worldNameInput.placeholder is TextMeshProUGUI hint) hint.text = "Name this world...";
+
+            // Same caret trick the player name field needs.
+            worldNameInput.enabled = false;
+            worldNameInput.enabled = true;
+
+            var labelObj = new GameObject("WorldNameLabel");
+            labelObj.transform.SetParent(panel.transform, false);
+            var labelRect = labelObj.AddComponent<RectTransform>();
+            labelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            labelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            labelRect.pivot = new Vector2(0.5f, 0.5f);
+            labelRect.anchoredPosition = new Vector2(-135f, 90f);
+            labelRect.sizeDelta = new Vector2(240, 40);
+            var labelText = labelObj.AddComponent<TextMeshProUGUI>();
+            labelText.text = "New world name";
+            labelText.fontSize = 18;
+            labelText.alignment = TextAlignmentOptions.Right;
+            labelText.color = new Color(0.8f, 0.85f, 0.95f, 1f);
+            labelObj.transform.SetParent(worldNameRow.transform, true);
+        }
+
+        /// <summary>
+        /// The world list: one row per saved world, the way a player expects to pick a save.
+        /// Built from plain UI objects rather than a game prefab, because the prefab this menu
+        /// borrows is a single-line setting row and cannot become a list.
+        /// </summary>
+        private void CreateWorldList()
+        {
+            worldListRoot = new GameObject("WorldList");
+            worldListRoot.transform.SetParent(panel.transform, false);
+
+            var rect = worldListRoot.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, 110f);
+            rect.sizeDelta = new Vector2(WorldRowWidth, WorldRowHeight * VisibleWorldRows);
+
+            for (var i = 0; i < VisibleWorldRows; i++) worldRows.Add(CreateWorldRow(i));
+
+            // Only shown when there are more worlds than fit on screen.
+            worldScrollUp = CreateListButton("WorldScrollUp", new Vector2(WorldRowWidth / 2f + 26f, -14f), "UP", () => ScrollWorldList(-1));
+            worldScrollDown = CreateListButton("WorldScrollDown", new Vector2(WorldRowWidth / 2f + 26f, -(WorldRowHeight * VisibleWorldRows) + 14f), "DN", () => ScrollWorldList(1));
+        }
+
+        private WorldRow CreateWorldRow(int index)
+        {
+            var row = new GameObject("WorldRow" + index);
+            row.transform.SetParent(worldListRoot.transform, false);
+
+            var rect = row.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -index * WorldRowHeight);
+            rect.sizeDelta = new Vector2(WorldRowWidth, WorldRowHeight - 4f);
+
+            var background = row.AddComponent<Image>();
+            background.color = UnselectedRow;
+            row.AddComponent<CustomButton>().SetOnClickAction(() => OnWorldRowClicked(index));
+
+            var title = CreateRowText(row, "Title", new Vector2(14f, 0f), new Vector2(-150f, -4f), 19f, TextAlignmentOptions.TopLeft);
+            var detail = CreateRowText(row, "Detail", new Vector2(14f, 0f), new Vector2(-150f, -26f), 15f, TextAlignmentOptions.TopLeft);
+            detail.color = new Color(0.72f, 0.76f, 0.84f, 1f);
+
+            // Its own button, so picking a world and throwing one away can never be the same click.
+            var deleteObj = new GameObject("Delete");
+            deleteObj.transform.SetParent(row.transform, false);
+            var deleteRect = deleteObj.AddComponent<RectTransform>();
+            deleteRect.anchorMin = new Vector2(1f, 0.5f);
+            deleteRect.anchorMax = new Vector2(1f, 0.5f);
+            deleteRect.pivot = new Vector2(1f, 0.5f);
+            deleteRect.anchoredPosition = new Vector2(-10f, 0f);
+            deleteRect.sizeDelta = new Vector2(130f, WorldRowHeight - 16f);
+            var deleteImage = deleteObj.AddComponent<Image>();
+            deleteImage.color = new Color(0.35f, 0.12f, 0.12f, 1f);
+            var deleteText = CreateRowText(deleteObj, "DeleteText", Vector2.zero, Vector2.zero, 15f, TextAlignmentOptions.Center);
+            deleteText.text = "Delete";
+            deleteText.color = new Color(1f, 0.85f, 0.85f, 1f);
+            deleteObj.AddComponent<CustomButton>().SetOnClickAction(() => OnWorldDeleteClicked(index));
+
+            return new WorldRow { Root = row, Background = background, Title = title, Detail = detail, Delete = deleteObj, DeleteText = deleteText };
+        }
+
+        private TextMeshProUGUI CreateRowText(GameObject parent, string name, Vector2 offsetMin, Vector2 offsetMax, float size, TextAlignmentOptions alignment)
+        {
+            var obj = new GameObject(name);
+            obj.transform.SetParent(parent.transform, false);
+            var rect = obj.AddComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = offsetMin;
+            rect.offsetMax = offsetMax;
+            var text = obj.AddComponent<TextMeshProUGUI>();
+            text.fontSize = size;
+            text.alignment = alignment;
+            text.enableWordWrapping = false;
+            text.color = Color.white;
+            return text;
+        }
+
+        private GameObject CreateListButton(string name, Vector2 position, string caption, System.Action onClick)
+        {
+            var obj = new GameObject(name);
+            obj.transform.SetParent(worldListRoot.transform, false);
+            var rect = obj.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = position;
+            rect.sizeDelta = new Vector2(38f, 38f);
+            obj.AddComponent<Image>().color = new Color(0.22f, 0.24f, 0.3f, 1f);
+            var text = CreateRowText(obj, "Caption", Vector2.zero, Vector2.zero, 16f, TextAlignmentOptions.Center);
+            text.text = caption;
+            obj.AddComponent<CustomButton>().SetOnClickAction(onClick);
+            return obj;
+        }
+
+        private void ScrollWorldList(int direction)
+        {
+            var maximum = System.Math.Max(0, worldChoices.Count - VisibleWorldRows);
+            var wanted = System.Math.Clamp(worldListOffset + direction, 0, maximum);
+            if (wanted == worldListOffset) return;
+
+            AudioManager.Instance.PlaySfx(AudioManager.Instance.uiClick.sounds[0]);
+            worldListOffset = wanted;
+            RefreshWorldRows();
+        }
+
+        private void OnWorldRowClicked(int rowIndex)
+        {
+            var choice = worldListOffset + rowIndex;
+            if (choice < 0 || choice >= worldChoices.Count) return;
+
+            AudioManager.Instance.PlaySfx(AudioManager.Instance.uiClick.sounds[0]);
+            worldChoiceIndex = choice;
+            worldPendingDelete = System.Guid.Empty;
+            ApplyWorldChoice();
+        }
+
+        private void OnWorldDeleteClicked(int rowIndex)
+        {
+            var choice = worldListOffset + rowIndex;
+            if (choice < 0 || choice >= worldChoices.Count) return;
+
+            var chosen = worldChoices[choice];
+            if (chosen == System.Guid.Empty) return;
+
+            AudioManager.Instance.PlaySfx(AudioManager.Instance.uiClick.sounds[0]);
+
+            // Throwing away a run everyone played deserves a second press.
+            if (worldPendingDelete != chosen)
+            {
+                worldPendingDelete = chosen;
+                RefreshWorldRows();
+                return;
+            }
+
+            try { Plugin.Services.GetService<IWorldSaveService>()?.DeleteWorld(chosen); }
+            catch (System.Exception ex) { Plugin.Log.LogWarning("Could not delete that co-op world: " + ex.Message); }
+
+            worldPendingDelete = System.Guid.Empty;
+            worldChoiceIndex = 0;
+            worldListOffset = 0;
+            RefreshWorldChoices();
+        }
+
+        /// <summary>Paints the rows for whatever part of the list is on screen.</summary>
+        private void RefreshWorldRows()
+        {
+            if (worldRows.Count == 0) return;
+
+            var maximum = System.Math.Max(0, worldChoices.Count - VisibleWorldRows);
+            worldListOffset = System.Math.Clamp(worldListOffset, 0, maximum);
+
+            for (var i = 0; i < worldRows.Count; i++)
+            {
+                var row = worldRows[i];
+                var choice = worldListOffset + i;
+
+                if (choice >= worldChoices.Count)
+                {
+                    row.Root.SetActive(false);
+                    continue;
+                }
+
+                row.Root.SetActive(true);
+                var id = worldChoices[choice];
+                var isNew = id == System.Guid.Empty;
+
+                row.Title.text = isNew ? "+  Create New World" : worldTitles[choice];
+                row.Title.color = isNew ? new Color(0.75f, 0.92f, 1f, 1f) : Color.white;
+                row.Detail.text = isNew ? "Everyone starts fresh" : worldLabels[choice];
+
+                row.Delete.SetActive(!isNew);
+                if (!isNew && row.DeleteText != null)
+                {
+                    var armed = worldPendingDelete == id;
+                    row.DeleteText.text = armed ? "Sure?" : "Delete";
+                    row.DeleteText.color = armed ? new Color(1f, 0.55f, 0.55f, 1f) : new Color(1f, 0.85f, 0.85f, 1f);
+                }
+
+                row.Background.color = choice == worldChoiceIndex ? SelectedRow : UnselectedRow;
+            }
+
+            if (worldScrollUp != null) worldScrollUp.SetActive(worldChoices.Count > VisibleWorldRows);
+            if (worldScrollDown != null) worldScrollDown.SetActive(worldChoices.Count > VisibleWorldRows);
+        }
+
+        /// <summary>The name the host typed for a new world, or nothing to let it be named for them.</summary>
+        public string GetChosenWorldName() => worldNameInput != null ? (worldNameInput.text ?? "").Trim() : "";
 
         private void OnWorldPickerLeftClicked() => StepWorldChoice(-1);
 
@@ -542,11 +811,14 @@ namespace MegabonkTogether.Scripts
                 worldChoices.Clear();
                 worldChoices.Add(System.Guid.Empty); // a new world always comes first
                 worldLabels.Clear();
-                worldLabels.Add("New World (everyone starts fresh)");
+                worldLabels.Add("Everyone starts fresh");
+                worldTitles.Clear();
+                worldTitles.Add("+  Create New World");
 
                 foreach (var world in service?.ListWorlds() ?? new List<Common.Persistence.WorldSave>())
                 {
                     worldChoices.Add(world.WorldId);
+                    worldTitles.Add(string.IsNullOrWhiteSpace(world.Name) ? "Co-op world" : world.Name);
                     worldLabels.Add(DescribeWorld(world));
                 }
 
@@ -562,12 +834,14 @@ namespace MegabonkTogether.Scripts
         private string DescribeWorld(Common.Persistence.WorldSave world)
         {
             var minutes = (int)(world.ElapsedSeconds / 60);
-            var label = $"{world.Name} - {minutes}m - {world.Players.Count} player(s)";
+            var played = minutes >= 60 ? $"{minutes / 60}h {minutes % 60}m" : $"{minutes}m";
+            var age = (System.DateTimeOffset.UtcNow - world.SavedAt).TotalHours;
+            var when = age < 1 ? "just now" : age < 24 ? $"{(int)age}h ago" : $"{(int)(age / 24)}d ago";
 
             var mine = world.FindMostRecent(ModConfig.PlayerIdentity.Value ?? "");
-            label += mine != null ? $" - you: {(ECharacter)mine.Character}" : " - you: new";
+            var you = mine != null ? $"you: {(ECharacter)mine.Character} lv{mine.Level}" : "you: new character";
 
-            return label;
+            return $"Stage {world.StageIndex + 1}  -  {played} played  -  {world.Players.Count} player(s)  -  {you}  -  saved {when}";
         }
 
         private void ApplyWorldChoice()
@@ -579,11 +853,24 @@ namespace MegabonkTogether.Scripts
             try { Plugin.Services.GetService<IWorldSaveService>().SelectedWorldId = chosen; }
             catch (System.Exception ex) { Plugin.Log.LogWarning($"Could not select a co-op world: {ex.Message}"); }
 
-            if (worldPickerStatusText != null)
+            // Naming only makes sense for a world that does not exist yet.
+            var isNew = chosen == System.Guid.Empty;
+            if (worldNameRow != null) worldNameRow.SetActive(isNew);
+
+            // The name travels with the world for its whole life, so it is handed over as soon
+            // as the host picks "Create New World" rather than read back later from the menu.
+            try
             {
-                worldPickerStatusText.text = worldLabels[worldChoiceIndex];
-                worldPickerStatusText.color = chosen == System.Guid.Empty ? Color.white : Color.green;
+                var service = Plugin.Services.GetService<IWorldSaveService>();
+                if (service != null) service.PendingWorldName = isNew ? GetChosenWorldName() : "";
             }
+            catch (System.Exception ex) { Plugin.Log.LogWarning($"Could not set the world name: {ex.Message}"); }
+
+            // Keep the chosen row selected and scrolled into view.
+            if (worldChoiceIndex < worldListOffset) worldListOffset = worldChoiceIndex;
+            else if (worldChoiceIndex >= worldListOffset + VisibleWorldRows) worldListOffset = worldChoiceIndex - VisibleWorldRows + 1;
+
+            RefreshWorldRows();
         }
 
         private void CreateNetplayOptionsUI()
@@ -1319,11 +1606,11 @@ namespace MegabonkTogether.Scripts
             joinButton.gameObject.SetActive(isVisible);
             friendliesBackButton.gameObject.SetActive(isVisible);
 
-            if (worldPickerSetting != null)
-            {
-                worldPickerSetting.SetActive(isVisible);
-                if (isVisible) RefreshWorldChoices();
-            }
+            // The stepper row is now only the heading above the list.
+            if (worldPickerSetting != null) worldPickerSetting.SetActive(isVisible);
+            if (worldListRoot != null) worldListRoot.SetActive(isVisible);
+            if (worldNameRow != null && !isVisible) worldNameRow.SetActive(false);
+            if (isVisible) RefreshWorldChoices();
         }
 
         private void UpdateNetplayOptionsUI(bool isVisible)

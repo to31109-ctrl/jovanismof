@@ -24,7 +24,14 @@ namespace MegabonkTogether.Patches
             if (!Plugin.Services.GetRequiredService<ISynchronizationService>().HasNetplaySessionStarted()) return;
             if (__instance.chestType != EChest.Normal && __instance.chestType != EChest.Corrupt) return;
             var inventory = GameManager.Instance?.player?.inventory;
-            if (inventory != null) __result = inventory.goldInt >= __instance.GetPrice();
+            if (inventory == null) return;
+
+            // Only ever widens the answer, and only by the rounding between the number on the
+            // HUD and the wallet behind it, so a chest costing exactly what is displayed can be
+            // bought. Forcing it true on a wallet that genuinely cannot cover the price lets the
+            // game charge it anyway and take the player into debt.
+            var price = __instance.GetPrice();
+            if (!__result && inventory.goldInt >= price && inventory.gold > price - 1f) __result = true;
         }
     }
 }

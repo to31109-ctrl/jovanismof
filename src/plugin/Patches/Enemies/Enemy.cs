@@ -130,6 +130,24 @@ namespace MegabonkTogether.Patches.Enemies
             }
 
             synchronizationService.OnEnemyDied(__instance, dc, trackerService.GetCurrentPlayerId());
+
+            ReviveOnBossDeath(__instance);
+        }
+
+        /// <summary>
+        /// A second way back for a downed player: killing the area boss brings them all up.
+        /// The revive ghost is itself spawned with the boss flag, so it has to be excluded or
+        /// killing one player's ghost would revive everybody.
+        /// </summary>
+        private static void ReviveOnBossDeath(Enemy enemy)
+        {
+            if (!Configuration.ModConfig.ReviveOnAreaBossDeath.Value) return;
+            if (!(synchronizationService.IsServerMode() ?? false)) return;
+            if (enemy == null || enemy.enemyFlag != EEnemyFlag.Boss) return;
+            if (enemyManagerService.GetReviverEnemy_Name(enemy) != null) return;
+
+            try { Scripts.Interactables.InteractableReviver.ReviveEveryoneWaiting(); }
+            catch (System.Exception ex) { Plugin.Log.LogError($"Boss-death revive failed: {ex}"); }
         }
 
         /// <summary>

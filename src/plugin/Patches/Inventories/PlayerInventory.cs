@@ -45,6 +45,17 @@ namespace MegabonkTogether.Patches.Inventories
         [HarmonyPatch(nameof(PlayerInventory.ChangeGold))]
         public static void ChangeGold_Postfix(PlayerInventory __instance, int amount, int __state)
         {
+            // A wallet below zero is never a state the player can act on: everything they try
+            // to buy is unaffordable until they have earned the debt back, which reads as gold
+            // being stolen. Clamped here rather than at each spender, so no path can produce it.
+            // Written through the backing fields so this does not re-enter ChangeGold.
+            if (__instance != null && __instance.goldInt < 0)
+            {
+                Plugin.Log.LogWarning($"Gold went negative ({__instance.goldInt}) after a change of {amount}; clamped to zero.");
+                __instance._gold_k__BackingField = 0f;
+                __instance._goldInt_k__BackingField = 0;
+            }
+
             if (!synchronizationService.HasNetplaySessionStarted())
             {
                 return;

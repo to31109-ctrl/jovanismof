@@ -11,7 +11,14 @@ namespace MegabonkTogether.Common.Persistence;
 public sealed class WorldSaveStore
 {
     public const int MaximumBytes = 64 * 1024 * 1024;
-    public const int Schema = 2;
+    public const int Schema = 3;
+    /// <summary>
+    /// The oldest layout still readable. Schema 3 only adds the stat upgrades a character had,
+    /// so a schema 2 world still loads: it simply restores without them, exactly as it did
+    /// when it was written. Refusing it instead would make every existing world disappear from
+    /// the player's list the moment they updated.
+    /// </summary>
+    public const int OldestReadableSchema = 2;
     public const int MaximumInLobby = 5;
     public const int MaximumRoster = 64;
     private readonly string directory;
@@ -133,7 +140,7 @@ public sealed class WorldSaveStore
 
     public static void Validate(WorldSave save)
     {
-        if (save.Schema != Schema) throw new InvalidDataException("Unsupported world save version");
+        if (save.Schema > Schema || save.Schema < OldestReadableSchema) throw new InvalidDataException("Unsupported world save version");
         if (save.Scaling == null || !save.Scaling.IsValid()) throw new InvalidDataException("Invalid lobby scaling");
         if (save.WorldId == Guid.Empty || save.HostId == Guid.Empty || save.Revision < 1) throw new InvalidDataException("Invalid world identity/revision");
         // A world keeps everyone who has ever played it, so the roster outgrows a single lobby.
@@ -172,7 +179,9 @@ public sealed class WorldSaveStore
             if (!float.IsFinite(player.Shield) || !float.IsFinite(player.MaxShield) || !float.IsFinite(player.Overheal) || !float.IsFinite(player.LeftOverXp)) throw new InvalidDataException("Invalid player health");
             if (player.Shield < 0 || player.Overheal < 0 || player.Level < 0 || player.Xp < 0) throw new InvalidDataException("Invalid player progression");
             if (!IsFinite(player.Pose)) throw new InvalidDataException("Invalid player placement");
-            if (player.Items == null || player.Upgrades == null || player.Components == null) throw new InvalidDataException("Invalid player collections");
+            if (player.Items == null || player.Upgrades == null || player.Components == null || player.Stats == null) throw new InvalidDataException("Invalid player collections");
+            // A character restored from an unusable stat would come back silently weaker.
+            if (player.Stats.Any(m => m == null || !float.IsFinite(m.Value))) throw new InvalidDataException("Invalid stat upgrade");
             if (player.Items.Values.Any(v => v < 0)) throw new InvalidDataException("Invalid item amount");
             foreach (var upgrade in player.Upgrades)
             {

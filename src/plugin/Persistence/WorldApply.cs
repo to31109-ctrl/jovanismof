@@ -90,6 +90,7 @@ namespace MegabonkTogether.Persistence
 
             try
             {
+                ApplyStats(inventory, slot);
                 ApplyWeapons(inventory, slot);
                 ApplyTomes(inventory, slot);
                 ApplyItems(inventory, slot);
@@ -103,6 +104,63 @@ namespace MegabonkTogether.Persistence
                 Plugin.Instance.RestorePlayerInventoryActions();
                 Plugin.CAN_SEND_MESSAGES = couldSend;
             }
+        }
+
+        /// <summary>
+        /// Replays every permanent stat change the player had. Applied before weapons, tomes
+        /// and vitals, because maximum health is itself a stat: restoring health first and the
+        /// stat that raises it afterwards would leave the player capped at the wrong value.
+        /// </summary>
+        private static void ApplyStats(PlayerInventory inventory, SavedPlayer slot)
+        {
+            if (slot.Stats == null || slot.Stats.Count == 0) return;
+
+            var statInventory = inventory.statInventory;
+            if (statInventory == null)
+            {
+                Plugin.Log.LogWarning($"World restore: {slot.Name} has no stat inventory; their upgrades cannot come back");
+                return;
+            }
+
+            // The character the player respawns into already carries its own starting
+            // modifiers. The saved list is the complete set, starting modifiers included, so
+            // replaying it on top of them would hand the player everything twice over. Cleared
+            // first, the end state is exactly what was saved.
+            try { inventory.statInventory.permanentChanges?.Clear(); }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"World restore: could not clear existing stats for {slot.Name} ({ex.Message}); not replaying, to avoid doubling them");
+                return;
+            }
+
+            var restored = 0;
+            foreach (var modifier in slot.Stats)
+            {
+                if (modifier == null || !float.IsFinite(modifier.Value)) continue;
+                try
+                {
+                    // permanent, no timeout, and kept out of the shrine log: this is restoring
+                    // what the player already had, not handing them a fresh shrine reward.
+                    statInventory.ChangeStat(new StatModifier
+                    {
+                        stat = (Assets.Scripts.Menu.Shop.EStat)modifier.Stat,
+                        modifyType = (EStatModifyType)modifier.Operation,
+                        modification = modifier.Value,
+                    }, true, 0f, false);
+                    restored++;
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log.LogWarning($"World restore: a stat upgrade for {slot.Name} could not be replayed ({ex.Message})");
+                }
+            }
+
+            // Recomputed once at the end rather than per modifier, so the player lands with
+            // the totals they had rather than whatever the last queued update produced.
+            try { inventory.playerStats?.ForceUpdateStats(); }
+            catch (Exception ex) { Plugin.Log.LogWarning($"World restore: stats for {slot.Name} did not recompute ({ex.Message})"); }
+
+            Plugin.Log.LogInfo($"World restore: {restored} stat upgrades returned to {slot.Name}");
         }
 
         private static void ApplyWeapons(PlayerInventory inventory, SavedPlayer slot)

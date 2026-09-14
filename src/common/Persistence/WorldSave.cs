@@ -7,7 +7,7 @@ namespace MegabonkTogether.Common.Persistence;
 /// </summary>
 public sealed class WorldSave
 {
-    public int Schema { get; set; } = 2;
+    public int Schema { get; set; } = 3;
     public Guid WorldId { get; set; }
     public Guid HostId { get; set; }
     public long Revision { get; set; }
@@ -106,6 +106,12 @@ public sealed class SavedPlayer
     public int Skips { get; set; }
     /// <summary>Weapons and tomes, replayed in order so the game recomputes their stats.</summary>
     public List<SavedUpgrade> Upgrades { get; set; } = new();
+    /// <summary>
+    /// Every permanent stat change the player has accumulated: the upgrade picked at each
+    /// level-up, and shrines. Without these a restored character keeps its level number and
+    /// loses everything that level actually gave it.
+    /// </summary>
+    public List<SavedModifier> Stats { get; set; } = new();
     public Dictionary<int, int> Items { get; set; } = new();
     public Dictionary<string, SavedComponent> Components { get; set; } = new();
 

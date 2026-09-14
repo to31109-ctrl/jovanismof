@@ -65,6 +65,12 @@ namespace MegabonkTogether.Services
         /// <summary>Every saved world, newest first, for the host to choose between.</summary>
         IReadOnlyList<WorldSave> ListWorlds();
 
+        /// <summary>Removes a saved world and its retained copy. Never touches a live session.</summary>
+        bool DeleteWorld(Guid id);
+
+        /// <summary>The name to give the next world this host starts. Empty means name it automatically.</summary>
+        string PendingWorldName { get; set; }
+
         /// <summary>
         /// The world the host chose to continue. Guid.Empty means a new world, where every player
         /// starts fresh no matter what any saved world remembers about them.
@@ -171,7 +177,10 @@ namespace MegabonkTogether.Services
                     if (worldId == Guid.Empty) worldId = Guid.NewGuid();
 
                     var save = WorldCapture.Capture(worldId, hostId, revision + 1, players, enemies, orbs, objects, carriedProgress, lastCheckpoint);
-                    save.Name = string.IsNullOrEmpty(save.Name) ? "Co-op world" : save.Name;
+                    // The name the host typed when they created this world, kept for its whole life.
+                    if (!string.IsNullOrWhiteSpace(PendingWorldName)) save.Name = PendingWorldName.Trim();
+                    else if (!string.IsNullOrEmpty(lastCheckpoint?.Name)) save.Name = lastCheckpoint.Name;
+                    save.Name = string.IsNullOrWhiteSpace(save.Name) ? "Co-op world" : save.Name;
 
                     if (save.Players.Count == 0)
                     {
@@ -212,6 +221,32 @@ namespace MegabonkTogether.Services
         }
 
         public Guid SelectedWorldId { get; set; } = Guid.Empty;
+
+        public string PendingWorldName { get; set; } = "";
+
+        public bool DeleteWorld(Guid id)
+        {
+            if (id == Guid.Empty) return false;
+            // Deleting the world being played would leave the run writing to a file that is no
+            // longer there, and the next checkpoint would recreate it anyway.
+            if (sessionLive && id == worldId)
+            {
+                logger.LogWarning("Refusing to delete the world that is currently being played.");
+                return false;
+            }
+
+            try
+            {
+                lock (gate) { store.Delete(id); }
+                if (SelectedWorldId == id) SelectedWorldId = Guid.Empty;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Could not delete co-op world {id}: {ex.Message}");
+                return false;
+            }
+        }
 
         public int? RememberedCharacterFor(Guid worldId)
         {

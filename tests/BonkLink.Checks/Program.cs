@@ -125,6 +125,14 @@ if(args.Contains("--public-relay"))
             Refreshes = 1,
             Skips = 3,
             Items = new Dictionary<int, int> { { 4, 3 }, { 11, 1 }, { 27, 9 } },
+            // The upgrade picked at each level-up. Losing these is what made a restored
+            // character keep its level and none of what that level gave it.
+            Stats =
+            {
+                new SavedModifier { Stat = 2, Operation = 0, Value = 25f },
+                new SavedModifier { Stat = 2, Operation = 1, Value = 0.15f },
+                new SavedModifier { Stat = 9, Operation = 0, Value = 4f },
+            },
             Upgrades =
             {
                 new SavedUpgrade
@@ -292,6 +300,23 @@ if(args.Contains("--public-relay"))
         Refuses(() => WorldSaveStore.Validate(Broken(MakeWorld(13), w => { foreach (var p in w.Players) p.Connected = true; for (var i = 0; i < 4; i++) { var extra = MakePlayer("E" + i, Guid.NewGuid(), false, (uint)(40 + i)); extra.Connected = true; w.Players.Add(extra); } })), "rejects more connected players than a lobby holds");
         Refuses(() => WorldSaveStore.Validate(Broken(MakeWorld(14), w => { var clone = MakePlayer("Twin", Guid.NewGuid(), false, 21); clone.Identity = w.Players[1].Identity; clone.Character = w.Players[1].Character; w.Players.Add(clone); })), "rejects the same player twice on the same character");
         Refuses(() => WorldSaveStore.Validate(Broken(MakeWorld(15), w => { var clone = MakePlayer("Twin", Guid.NewGuid(), false, 21); clone.Identity = w.Players[1].Identity; clone.Character = 9; clone.Connected = true; w.Players.Add(clone); })), "rejects one player connected as two characters at once");
+
+        // Losing these is what made a restored character keep its level and none of its power.
+        var storedStats = new WorldSaveStore(root).Read(worldId).Players.First(p => p.IsHost).Stats;
+        Check(storedStats.Count == 3
+              && storedStats[0].Stat == 2 && storedStats[0].Operation == 0 && storedStats[0].Value == 25f
+              && storedStats[1].Operation == 1 && storedStats[1].Value == 0.15f
+              && storedStats[2].Stat == 9 && storedStats[2].Value == 4f,
+              "level-up stat upgrades survive a checkpoint exactly");
+        Refuses(() => WorldSaveStore.Validate(Broken(MakeWorld(16), w => w.Players[0].Stats[1].Value = float.NaN)), "rejects an unusable stat upgrade");
+        // A world written before stat upgrades were saved must still open, or updating would
+        // make every world a player already had vanish from their list.
+        var older = MakeWorld(18); older.Schema = WorldSaveStore.OldestReadableSchema; older.Players[0].Stats.Clear();
+        WorldSaveStore.Validate(older);
+        Check(true, "a world saved by the previous version still loads");
+        Refuses(() => WorldSaveStore.Validate(Broken(MakeWorld(19), w => w.Schema = WorldSaveStore.OldestReadableSchema - 1)), "rejects a checkpoint older than the oldest readable version");
+        Refuses(() => WorldSaveStore.Validate(Broken(MakeWorld(20), w => w.Schema = WorldSaveStore.Schema + 1)), "rejects a checkpoint from a newer version");
+        Refuses(() => WorldSaveStore.Validate(Broken(MakeWorld(17), w => w.Players[0].Stats = null!)), "rejects a checkpoint with no stat upgrade list");
 
         var second = MakeWorld(2);
         second.Players[0].Gold = 4321;

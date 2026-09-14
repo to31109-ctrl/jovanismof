@@ -44,6 +44,12 @@ namespace MegabonkTogether.Patches
 
         }
 
+        /// <summary>When the wait stops looking normal and the player is told so.</summary>
+        private const float SlowLobbySeconds = 15f;
+
+        /// <summary>When waiting is abandoned and the run starts regardless.</summary>
+        private const float GiveUpWaitingSeconds = 45f;
+
         private static IEnumerator WaitForLobbyReady()
         {
             Plugin.Log.LogInfo("Waiting for lobby to be ready");
@@ -68,23 +74,56 @@ namespace MegabonkTogether.Patches
 
             synchronizationService.TransitionToState(GameEvent.Ready);
 
+            // This used to wait for ever. If one player's ready never arrives, everybody else
+            // sits on "Waiting for other players" with no way out but closing the game.
+            var waited = 0f;
+            var sinceLastLog = 0f;
+            var gaveUpWaiting = false;
+
             while (!synchronizationService.IsLobbyReady())
             {
-                dotAnimTimer += Time.unscaledDeltaTime;
+                var step = Time.unscaledDeltaTime;
+                waited += step;
+                dotAnimTimer += step;
+                sinceLastLog += step;
+
                 if (dotAnimTimer >= 1f)
                 {
                     dotAnimTimer = 0f;
                     dotCount = (dotCount + 1) % 4;
                     string dots = new string('.', dotCount);
-                    synchronizeText.text = $"Waiting for other players {dots}";
+                    synchronizeText.text = waited < SlowLobbySeconds
+                        ? $"Waiting for other players {dots}"
+                        : $"Waiting for other players {dots}\nTaking longer than usual. Starting shortly either way.";
                 }
 
-                Plugin.Log.LogInfo("Lobby not ready yet, waiting...");
+                // Logged occasionally rather than six times a second: the old line wrote to disk
+                // continuously for as long as the wait lasted.
+                if (sinceLastLog >= 5f)
+                {
+                    sinceLastLog = 0f;
+                    Plugin.Log.LogInfo($"Lobby not ready after {waited:F0}s, still waiting...");
+                }
+
+                if (waited >= GiveUpWaitingSeconds)
+                {
+                    gaveUpWaiting = true;
+                    break;
+                }
 
                 yield return new WaitForSeconds(0.17f);
             }
 
-            Plugin.Log.LogInfo("Lobby is ready, starting the game");
+            if (gaveUpWaiting)
+            {
+                // Starting anyway beats leaving someone stuck on a screen they cannot dismiss.
+                // Whoever is missing is still sent the run state when they do arrive.
+                Plugin.Log.LogWarning($"Lobby never reported ready after {GiveUpWaitingSeconds:F0}s; starting anyway.");
+            }
+            else
+            {
+                Plugin.Log.LogInfo("Lobby is ready, starting the game");
+            }
 
             synchronizationService.TransitionToState(GameEvent.Start);
             var seed = playerManagerService.GetSeed();

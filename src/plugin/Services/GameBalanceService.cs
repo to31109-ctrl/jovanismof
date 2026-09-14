@@ -35,7 +35,26 @@ namespace MegabonkTogether.Services
         private const float baseBossLampInitialChargeTimeSeconds = 3.0f;
 
 
-        public int GetMaxEnemiesSpawnable() => Scaling.EnemyCap;
+        public int GetMaxEnemiesSpawnable() => Scaling.ResolveEnemyCap(PlayersCount, SinglePlayerEnemyCap);
+
+        /// <summary>
+        /// What the game itself allows on screen for one player. Asked of the game rather than
+        /// written down here, so it stays right if a patch changes it.
+        /// </summary>
+        private static int SinglePlayerEnemyCap
+        {
+            get
+            {
+                try
+                {
+                    var manager = EnemyManager.Instance;
+                    if (manager == null) return 0;
+                    var native = manager.GetNumMaxEnemies();
+                    return native > 0 ? native : EnemyManager.maxNumEnemiesPooled;
+                }
+                catch { return 0; }
+            }
+        }
 
         public float GetCreditsTimerMultiplier()
         {

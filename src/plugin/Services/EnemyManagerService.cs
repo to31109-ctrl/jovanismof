@@ -290,13 +290,17 @@ namespace MegabonkTogether.Services
             var ownerId = currentReviverOwner.Value;
             var count = reviverSpawnCountPerOwner.AddOrUpdate(ownerId, 1, (_, prev) => prev + 1);
 
-            if (count >= 6)
-            {
-                return;
-            }
+            // Each death costs the party more, but it always stays a fraction of the enemy it
+            // is built from. The old rule stopped reducing at the sixth death and left a full
+            // boss standing between the party and their friend; because the ghost is spawned
+            // with the boss flag it also carries boss and player-count health scaling, so
+            // "full" was several times what anyone expected to have to chew through.
+            var ceiling = System.Math.Max(0.01f, Configuration.ModConfig.ReviveGhostHealthPercent.Value / 100f);
+            var share = System.Math.Min(count, 6) / 6f;
+            var multiplier = ceiling * share;
 
-            var multiplier = (count * 2) / 12f;
             var newHp = enemy.hp * multiplier;
+            if (!float.IsFinite(newHp) || newHp <= 0) return;
 
             enemy.hp = newHp;
             enemy.controlHp = newHp;
