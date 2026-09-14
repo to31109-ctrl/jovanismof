@@ -31,19 +31,26 @@ namespace MegabonkTogether.Patches.Inventories
         }
 
         /// <summary>
-        /// Synchronize gold changes in shared experience mode.
-        /// We only synchronize gold gain
+        /// Share actual local earnings independently of shared experience.
+        /// Spending stays in the buyer's wallet.
         /// </summary>
+        [HarmonyPrefix]
+        [HarmonyPatch(nameof(PlayerInventory.ChangeGold))]
+        public static void ChangeGold_Prefix(PlayerInventory __instance, out int __state)
+        {
+            __state = __instance.goldInt;
+        }
+
         [HarmonyPostfix]
         [HarmonyPatch(nameof(PlayerInventory.ChangeGold))]
-        public static void ChangeGold_Postfix(PlayerInventory __instance, int amount)
+        public static void ChangeGold_Postfix(PlayerInventory __instance, int amount, int __state)
         {
             if (!synchronizationService.HasNetplaySessionStarted())
             {
                 return;
             }
 
-            if (!synchronizationService.IsSharedExperienceEnabled())
+            if (__instance != GameManager.Instance?.player?.inventory)
             {
                 return;
             }
@@ -58,7 +65,8 @@ namespace MegabonkTogether.Patches.Inventories
                 return;
             }
 
-            synchronizationService.OnChangeGold(amount);
+            var earned = (long)__instance.goldInt - __state;
+            if (earned > 0) synchronizationService.OnChangeGold((int)System.Math.Min(int.MaxValue, earned));
         }
     }
 }

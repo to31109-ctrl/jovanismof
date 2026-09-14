@@ -14,6 +14,9 @@ $ErrorActionPreference = 'Stop'
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ("jovanismof-verify-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 $desktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Play JOVANISMOF.lnk'
 $desktopExisted = Test-Path -LiteralPath $desktopLink
+$desktopBackup = if ($desktopExisted) { [IO.File]::ReadAllBytes($desktopLink) } else { $null }
+$stageLink = Join-Path $StageDirectory 'Play JOVANISMOF.lnk'
+$stageBackup = if (Test-Path -LiteralPath $stageLink) { [IO.File]::ReadAllBytes($stageLink) } else { $null }
 
 try {
     New-Item -ItemType Directory -Force -Path (Join-Path $scratch 'Megabonk_Data') | Out-Null
@@ -50,8 +53,21 @@ try {
     Write-Host "Launcher verified: resolves to $resolved with no byte-order mark, shortcut present."
 }
 finally {
-    if (!$desktopExisted -and (Test-Path -LiteralPath $desktopLink)) {
+    if ($desktopExisted) {
+        [IO.File]::WriteAllBytes($desktopLink, $desktopBackup)
+    } elseif (Test-Path -LiteralPath $desktopLink) {
         Remove-Item -LiteralPath $desktopLink -Force -ErrorAction SilentlyContinue
     }
-    if (Test-Path -LiteralPath $scratch) { Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($null -ne $stageBackup) {
+        [IO.File]::WriteAllBytes($stageLink, $stageBackup)
+    } elseif (Test-Path -LiteralPath $stageLink) {
+        Remove-Item -LiteralPath $stageLink -Force
+    }
+    $scratchFullPath = [IO.Path]::GetFullPath($scratch)
+    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+    if (!$scratchFullPath.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($scratchFullPath) -notmatch '^jovanismof-verify-[a-f0-9]{8}$') {
+        throw "Refusing cleanup outside the verification scratch directory: $scratchFullPath"
+    }
+    if (Test-Path -LiteralPath $scratchFullPath) { Remove-Item -LiteralPath $scratchFullPath -Recurse -Force -ErrorAction SilentlyContinue }
 }

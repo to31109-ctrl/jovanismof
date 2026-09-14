@@ -402,7 +402,7 @@ namespace MegabonkTogether
                 if (WindowManager.activeWindow.name.Contains("Maps And Stats"))
                 {
                     WindowManager.activeWindow.allButtons.ToArray().FirstOrDefault(b => b.name == "B_Back")?.button.onClick.Invoke();
-                    (WindowManager.activeWindow as CharacterMenu)?.b_back.button.onClick.Invoke();
+                    (WindowManager.activeWindow?.GetComponent<CharacterMenu>())?.b_back.button.onClick.Invoke();
                 }
             }
             else

@@ -23,9 +23,10 @@ player's own balance. Revive teammates using the coffin/ghost encounter.
 The host saves the shared world while you play: every player's items, gold,
 level, experience, health, weapons and position, every enemy and boss with its
 health, and the run progress. It is written to BonkLink-Coop/BepInEx/BonkLinkWorlds
-and never touches your normal single-player save. Host the same stage again and
-the run picks up where it stopped; a player who drops out and rejoins gets their
-own character back. Settings are under [CoopSaves] in the mod configuration.
+and never touches your normal single-player save. Resume a saved world from the
+host world picker after everyone rejoins the lobby. Mid-run joining is still
+blocked by the public matchmaking service. Checkpoints do not restore every
+projectile, attack phase or effect queue. Settings are under [CoopSaves].
 
 The mod uses automatic direct networking with a public relay fallback. No Steam
 networking or manual port forwarding is needed. Allow the game network access

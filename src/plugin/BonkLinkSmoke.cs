@@ -58,6 +58,85 @@ public class BonkLinkSmoke : MonoBehaviour
     private bool ghostKilled;
     private float coffinAt;
     private bool worldSaveChecked;
+    private int walletProbeStep;
+
+    private void DriveWalletProbe(bool host, float liveSeconds)
+    {
+        var inventory = GameManager.Instance.player.inventory;
+        if (walletProbeStep < 5) Assets.Scripts.Utility.MyTime.Pause();
+        if (walletProbeStep == 0)
+        {
+            inventory._gold_k__BackingField = 0;
+            inventory._goldInt_k__BackingField = 0;
+            walletProbeStep = 1;
+        }
+        if (walletProbeStep == 1 && liveSeconds > (host ? 8 : 14))
+        {
+            inventory.ChangeGold(host ? 37 : 19);
+            walletProbeStep = 2;
+        }
+        if (walletProbeStep == 2 && liveSeconds > 22)
+        {
+            Plugin.Log.LogInfo($"BONKLINK_WALLET_SHARED: actual={inventory.goldInt} expected=56 pass={inventory.goldInt == 56}");
+            inventory.ChangeGold(host ? -7 : -11);
+            walletProbeStep = 3;
+        }
+        if (walletProbeStep == 3 && liveSeconds > 30)
+        {
+            var expected = host ? 49 : 45;
+            Plugin.Log.LogInfo($"BONKLINK_WALLET_SPEND: actual={inventory.goldInt} expected={expected} pass={inventory.goldInt == expected}");
+            var chest = Plugin.Services.GetRequiredService<ISpawnedObjectManagerService>().GetAllSpawnedObjects()
+                .Select(o => o.obj.GetComponent<Assets.Scripts.Inventory__Items__Pickups.Chests.InteractableChest>()).FirstOrDefault(c => c != null && c.chestType == Assets.Scripts.Inventory__Items__Pickups.Interactables.EChest.Normal);
+            if (chest != null)
+            {
+                var price = chest.GetPrice();
+                inventory._gold_k__BackingField = price;
+                inventory._goldInt_k__BackingField = price;
+                Plugin.Log.LogInfo($"BONKLINK_CHEST_EXACT: price={price} affordable={chest.CanAfford()}");
+                inventory._gold_k__BackingField = expected;
+                inventory._goldInt_k__BackingField = expected;
+            }
+            else Plugin.Log.LogError("BONKLINK_CHEST_EXACT: no chest available for test");
+            walletProbeStep = 4;
+        }
+        if (walletProbeStep == 4 && liveSeconds > (host ? 45 : 38))
+        {
+            inventory._gold_k__BackingField = 0;
+            inventory._goldInt_k__BackingField = 0;
+            if (host)
+            {
+                var chest = Plugin.Services.GetRequiredService<ISpawnedObjectManagerService>().GetAllSpawnedObjects()
+                    .Select(o => o.obj.GetComponent<Assets.Scripts.Inventory__Items__Pickups.Chests.InteractableChest>()).FirstOrDefault(c => c != null && c.chestType == Assets.Scripts.Inventory__Items__Pickups.Interactables.EChest.Normal);
+                if (chest != null)
+                {
+                    var price = chest.GetPrice();
+                    inventory._gold_k__BackingField = price;
+                    inventory._goldInt_k__BackingField = price;
+                    Plugin.Services.GetRequiredService<ISynchronizationService>().OnInteractableUsed(chest);
+                    var bought = chest.Interact();
+                    Plugin.Log.LogInfo($"BONKLINK_CHEST_ENTER: type={chest.chestType} price={price} accepted={bought} remaining={inventory.goldInt}");
+                }
+            }
+            walletProbeStep = 5;
+        }
+        if (walletProbeStep == 5 && liveSeconds > 60)
+        {
+            var window = UnityEngine.Object.FindObjectOfType<ChestWindowUi>();
+            if (window == null) Plugin.Log.LogError("BONKLINK_CHEST_BUY: no chest window");
+            else
+            {
+                MyTime.Unpause();
+                window.OpenButton();
+                Plugin.Log.LogInfo($"BONKLINK_CHEST_OPEN: remaining={inventory.goldInt}");
+            }
+            walletProbeStep = 6;
+        }
+        if (walletProbeStep == 6 && liveSeconds > 75)
+        {
+            Plugin.Log.LogInfo($"BONKLINK_CHEST_BUY: remaining={inventory.goldInt} pass={inventory.goldInt == 0}");
+            walletProbeStep = 7;
+        }
+    }
     private bool menuUiChecked;
     private bool pauseUiChecked;
     private int marathonStage = -1;
@@ -79,7 +158,8 @@ public class BonkLinkSmoke : MonoBehaviour
     public void Update()
     {
         Application.runInBackground = true;
-        elapsed = (float)timer.Elapsed.TotalSeconds;
+        elapsed = (float)(DateTime.UtcNow - launchTime).TotalSeconds;
+        if (elapsed > 180 && Environment.GetCommandLineArgs().Contains("--bonklink.walletcheck")) { Application.Quit(); return; }
         if (elapsed < 15 || done) return;
         var args = Environment.GetCommandLineArgs();
         bool host = args.Contains("--bonklink.host");
@@ -102,14 +182,25 @@ public class BonkLinkSmoke : MonoBehaviour
             var codeFile = Path.GetFullPath(Path.Combine(BepInEx.Paths.GameRootPath, "..", "tools", "test-room.txt"));
             if (!started && (host || (File.Exists(codeFile) && File.GetLastWriteTimeUtc(codeFile) > launchTime)))
             {
+                var roomCode = "";
+                if (!host)
+                {
+                    try { roomCode = File.ReadAllText(codeFile).Trim(); }
+                    catch (IOException) { return; }
+                    if (string.IsNullOrEmpty(roomCode)) return;
+                }
                 started = true;
-                Plugin.Instance.Mode = new NetworkMode { Mode = NetworkModeType.Friendlies, Role = host ? Role.Host : Role.Client, RoomCode = host ? "" : File.ReadAllText(codeFile).Trim(), EnabledSharedExperience = true };
+                Plugin.Instance.Mode = new NetworkMode { Mode = NetworkModeType.Friendlies, Role = host ? Role.Host : Role.Client, RoomCode = roomCode, EnabledSharedExperience = true };
                 Plugin.Instance.NetworkHandler.HandleNetworking();
             }
             if (!selected && Plugin.Instance.NetworkHandler.HasFoundMatch == true)
             {
                 selected = true;
-                if (host) File.WriteAllText(codeFile, Plugin.Instance.Mode.RoomCode);
+                if (host)
+                {
+                    File.WriteAllText(codeFile + ".tmp", Plugin.Instance.Mode.RoomCode);
+                    File.Move(codeFile + ".tmp", codeFile, true);
+                }
                 Plugin.Instance.GetMainMenu().GoToCharacterSelection();
             }
             if (selected && !confirmed && Plugin.Instance.NetworkHandler.GetLobbySize() >= requiredPlayers && elapsed > 35)
@@ -130,10 +221,16 @@ public class BonkLinkSmoke : MonoBehaviour
             {
                 lastReport = elapsed;
                 var udp = Plugin.Services.GetRequiredService<IUdpClientService>();
-                Plugin.Log.LogInfo($"BONKLINK_LOBBY: players={Plugin.Instance.NetworkHandler.GetLobbySize()} matched={Plugin.Instance.NetworkHandler.HasFoundMatch} ready={udp.AreAllPeersReady()}");
+                Plugin.Log.LogInfo($"BONKLINK_LOBBY: players={Plugin.Instance.NetworkHandler.GetLobbySize()} matched={Plugin.Instance.NetworkHandler.HasFoundMatch} ready={udp.AreAllPeersReady()} wall={elapsed:F1} liveAt={liveAt:F1} walletStep={walletProbeStep} started={Plugin.Services.GetRequiredService<ISynchronizationService>().HasNetplaySessionStarted()}");
                 if (Plugin.Services.GetRequiredService<ISynchronizationService>().HasNetplaySessionStarted())
                 {
                     if (liveAt == 0) liveAt = elapsed;
+                    if (args.Contains("--bonklink.walletcheck"))
+                    {
+                        DriveWalletProbe(host, elapsed - liveAt);
+                        if (elapsed > 140) Application.Quit();
+                        return;
+                    }
                     var manager = Plugin.Services.GetRequiredService<IEnemyManagerService>();
                     var enemies = ((IEnumerable<KeyValuePair<uint, Enemy>>)AccessTools.Field(manager.GetType(), "spawnedEnemies").GetValue(manager)).Where(p => p.Value != null).OrderBy(p => p.Key).ToArray();
                     Plugin.Log.LogInfo($"BONKLINK_WORLD: gold={GameManager.Instance.player.inventory.goldInt} enemies={enemies.Length} state=" + string.Join(";", enemies.Take(20).Select(p => $"{p.Key}:{p.Value.hp:F1}")));

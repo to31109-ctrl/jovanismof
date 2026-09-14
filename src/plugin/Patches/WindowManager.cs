@@ -110,7 +110,8 @@ namespace MegabonkTogether.Patches
         {
             if (closedWindow.name == "W_Character" && Plugin.Instance.Mode.Mode == NetworkModeType.Friendlies)
             {
-                var character = closedWindow as CharacterMenu;
+                var character = closedWindow?.GetComponent<CharacterMenu>();
+                if (character?.b_confirm == null) return;
                 character.b_confirm.state = MyButton.EButtonState.Active;
                 character.b_confirm.RefreshState();
             }
@@ -134,13 +135,15 @@ namespace MegabonkTogether.Patches
             {
                 if (playerManagerService.GetAllPlayers().Count() < 2)
                 {
-                    var character = WindowManager.activeWindow as CharacterMenu;
+                    var character = WindowManager.activeWindow?.GetComponent<CharacterMenu>();
+                    if (character?.b_confirm == null) return;
                     character.b_confirm.state = MyButton.EButtonState.Inactive;
                     character.b_confirm.RefreshState();
                 }
                 else
                 {
-                    var character = WindowManager.activeWindow as CharacterMenu;
+                    var character = WindowManager.activeWindow?.GetComponent<CharacterMenu>();
+                    if (character?.b_confirm == null) return;
                     character.b_confirm.state = MyButton.EButtonState.Active;
                     character.b_confirm.RefreshState();
                 }
@@ -188,7 +191,8 @@ namespace MegabonkTogether.Patches
 
         private static void CreateFriendliesInfoDisplay(Transform parent, Window newWindow)
         {
-            var menu = newWindow as CharacterMenu;
+            var menu = newWindow?.GetComponent<CharacterMenu>();
+            if (menu?.b_confirm == null) return;
             var btn = menu.b_confirm;
             DestroyFriendliesInfoDisplay();
 

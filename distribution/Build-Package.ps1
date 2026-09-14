@@ -82,5 +82,9 @@ No Megabonk game binaries or BonkWithFriends binaries/source are included.
     # "Could not find Megabonk.exe" failure cannot be shipped again.
     & (Join-Path $PSScriptRoot 'Verify-Package.ps1') -StageDirectory $stage -GamePath $GamePath
 
+    # Everyone who already has the mod has the updater switched off, so installing over an
+    # existing copy has to switch it on without disturbing the rest of their settings.
+    & (Join-Path $PSScriptRoot 'Test-ExistingConfig.ps1') -StageDirectory $stage -GamePath $GamePath
+
     Write-Host "Staged at $stage. Add the verified VALIDATION.txt before creating the final ZIP."
 } finally { Pop-Location }

@@ -70,12 +70,24 @@ ShowChangelog = false
 PreviousVersion = 5.1.0
 "@ | Set-Content -LiteralPath $configFile -Encoding UTF8
     } elseif ($updateRepository) {
-        # An existing installation should still learn where updates come from.
+        # Installing this release enables its update feed for existing copies too.
         $config = Get-Content -LiteralPath $configFile -Raw
-        if ($config -match '(?m)^UpdateRepository\s*=') {
-            $config = [regex]::Replace($config, '(?m)^UpdateRepository\s*=.*$', "UpdateRepository = $updateRepository")
-        } else {
-            $config = $config.TrimEnd() + "`r`nUpdateRepository = $updateRepository`r`n"
+        foreach ($updateSetting in @(@('UpdateRepository', $updateRepository), @('CheckForUpdates', 'true'))) {
+            $sectionPattern = '(?ms)^\[Updates\][^\r\n]*\r?\n(?:(?!^\[).)*'
+            $section = [regex]::Match($config, $sectionPattern)
+            if (!$section.Success) {
+                $config = $config.TrimEnd() + "`r`n[Updates]`r`n"
+                $section = [regex]::Match($config, $sectionPattern)
+            }
+            $keyPattern = '(?m)^' + $updateSetting[0] + '\s*=[^\r\n]*'
+            $newLine = $updateSetting[0] + ' = ' + $updateSetting[1]
+            $sectionText = $section.Value
+            if ([regex]::IsMatch($sectionText, $keyPattern)) {
+                $sectionText = [regex]::Replace($sectionText, $keyPattern, $newLine)
+            } else {
+                $sectionText = $sectionText.TrimEnd() + "`r`n$newLine`r`n"
+            }
+            $config = $config.Substring(0, $section.Index) + $sectionText + $config.Substring($section.Index + $section.Length)
         }
         Set-Content -LiteralPath $configFile -Value $config -Encoding UTF8
     }

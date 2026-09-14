@@ -2495,8 +2495,10 @@ namespace MegabonkTogether.Services
                 return;
             }
 
+            var previousCanSend = Plugin.CAN_SEND_MESSAGES;
             Plugin.CAN_SEND_MESSAGES = false;
-
+            try
+            {
             switch (used.Action)
             {
                 case InteractableAction.Destroy:
@@ -2575,7 +2577,7 @@ namespace MegabonkTogether.Services
                     var chest = interactableObj.GetComponent<InteractableChest>();
                     if (chest != null)
                     {
-                        if (GameManager.Instance.player.IsDead() || !chest.CanAfford())
+                        if (GameManager.Instance.player.IsDead())
                         {
                             PauseForSharedReward();
                             RewardFinished();
@@ -2583,7 +2585,16 @@ namespace MegabonkTogether.Services
                         }
                         else
                         {
-                            chest.Interact();
+                            var previousChest = Patches.ChestPurchases.SharedRewardChest;
+                            Patches.ChestPurchases.SharedRewardChest = chest;
+                            try
+                            {
+                                var accepted = chest.Interact();
+#if BONKLINK_TESTING
+                                logger.LogInfo($"BONKLINK_SHARED_CHEST_REPLAY: accepted={accepted} balance={GameManager.Instance.player.inventory.goldInt}");
+#endif
+                            }
+                            finally { Patches.ChestPurchases.SharedRewardChest = previousChest; }
                         }
                         break;
                     }
@@ -2784,7 +2795,8 @@ namespace MegabonkTogether.Services
                     break;
             }
 
-            Plugin.CAN_SEND_MESSAGES = true;
+            }
+            finally { Plugin.CAN_SEND_MESSAGES = previousCanSend; }
         }
 
         public bool OnStartingToChargingShrine(uint shrineNetplayId)
@@ -4546,7 +4558,18 @@ namespace MegabonkTogether.Services
             // BonkLink edition, 2026-09-12: restore state even if inventory changes during a transition.
             var previous = Plugin.CAN_SEND_MESSAGES;
             Plugin.CAN_SEND_MESSAGES = false;
-            try { GameManager.Instance.player.inventory.ChangeGold(changed.Amount); }
+            try
+            {
+                var inventory = GameManager.Instance?.player?.inventory;
+                if (inventory == null || changed.Amount <= 0) return;
+                // This amount was already credited by the earning player's game. Applying the
+                // native per-frame earning cap again can give each peer a different amount.
+                var before = inventory.goldInt;
+                var balance = (int)Math.Min(int.MaxValue, (long)before + changed.Amount);
+                inventory._gold_k__BackingField = balance;
+                inventory._goldInt_k__BackingField = balance;
+                PlayerInventory.A_GoldChange?.Invoke(inventory, balance - before);
+            }
             finally { Plugin.CAN_SEND_MESSAGES = previous; }
         }
     }

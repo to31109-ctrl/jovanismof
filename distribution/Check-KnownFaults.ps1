@@ -41,6 +41,14 @@ foreach ($file in $source) {
 }
 
 # 3. The launcher reads the game path as plain text, so a byte-order mark becomes part of
+# Native Window wrappers must resolve the CharacterMenu component, not use a managed as cast.
+foreach ($file in $source) {
+    if ((Get-Content -Raw -LiteralPath $file.FullName) -match '\bas\s+CharacterMenu\b') {
+        $faults += "$($file.Name) casts a native Window with as CharacterMenu; use its CharacterMenu component."
+    }
+}
+
+# The launcher reads the game path as plain text, so a byte-order mark becomes part of
 #    the path and nothing can be found there. This is what broke Play JOVANISMOF.
 $installer = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install.ps1')
 if ($installer -match "gamepath\.txt'\)\s*-Value[^\r\n]*-Encoding\s+UTF8") {

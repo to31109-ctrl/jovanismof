@@ -21,6 +21,7 @@ namespace MegabonkTogether.Patches
         private static readonly IPlayerManagerService playerManagerService = Plugin.Services.GetService<IPlayerManagerService>();
 
         private static bool isWaitingForServerResponse = false;
+        private static bool startApproved;
 
         /// <summary>
         /// Prevent Host from starting a new map until all players are ready (selected character)
@@ -58,8 +59,9 @@ namespace MegabonkTogether.Patches
 
             var isFriendlyMode = Plugin.Instance.Mode.Mode == NetworkModeType.Friendlies;
 
-            if (isFriendlyMode && !isWaitingForServerResponse)
+            if (isFriendlyMode && !startApproved)
             {
+                if (isWaitingForServerResponse) return false;
                 isWaitingForServerResponse = true;
                 CoroutineRunner.Instance.Run(NotifyServerAndStartGame(newRunConfig));
                 return false;
@@ -67,7 +69,7 @@ namespace MegabonkTogether.Patches
 
             Plugin.Instance.IS_HOST_READY = false;
             Plugin.Instance.HideModal();
-
+            AnnounceRunStart(newRunConfig);
             return true;
         }
 
@@ -75,35 +77,36 @@ namespace MegabonkTogether.Patches
         {
             Plugin.Instance.ShowModal("Locking lobby...");
 
-            var task = websocketClientService.SendGameStarting();
-
-            while (!task.IsCompleted)
+            try
             {
-                yield return new WaitForSeconds(0.17f);
+                var task = websocketClientService.SendGameStarting();
+                while (!task.IsCompleted) yield return null;
+                if (task.IsCompletedSuccessfully && task.Result)
+                {
+                    startApproved = true;
+                    MapController.StartNewMap(runConfig);
+                }
+                else
+                {
+                    Plugin.Log.LogError($"Failed to lock lobby: {task.Exception?.GetBaseException().Message ?? "timeout or rejection"}");
+                    Plugin.Instance.HideModal();
+                    Plugin.Instance.ShowModal("Failed to lock lobby. Please try again.");
+                }
             }
-
-            if (task.Result)
+            finally
             {
-                Plugin.Instance.IS_HOST_READY = false;
-                Plugin.Instance.HideModal();
-
-                MapController.StartNewMap(runConfig);
+                startApproved = false;
                 isWaitingForServerResponse = false;
-            }
-            else
-            {
-                Plugin.Log.LogError("Failed to get server response for game starting");
-                Plugin.Instance.HideModal();
-                Plugin.Instance.ShowModal("Failed to lock lobby. Please try again.");
+                Plugin.Instance.IS_HOST_READY = false;
             }
         }
 
         /// <summary>
         /// Synchronize run start to clients if all players are ready
         /// </summary>
-        [HarmonyPostfix]
-        [HarmonyPatch(nameof(MapController.StartNewMap))]
-        public static void StartNewMap(RunConfig newRunConfig)
+        // Set the shared seed and loading state before native stage generation begins.
+        // Only the approved host call reaches this announcement.
+        private static void AnnounceRunStart(RunConfig newRunConfig)
         {
             if (!synchronizationService.HasNetplaySessionInitialized())
             {

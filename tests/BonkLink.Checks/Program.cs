@@ -15,6 +15,11 @@ void Refuses(Action action, string name)
 { try { action(); } catch(InvalidDataException) { Check(true,name); return; } throw new Exception("Expected rejection: " + name); }
 WorldSave Broken(WorldSave save, Action<WorldSave> damage) { damage(save); return save; }
 float clock = 0;
+var rateProbe = .35f;
+for (var i = 0; i < 13; i++) rateProbe = LobbyScaling.StepRate(rateProbe, 1);
+Check(rateProbe == 1f, "35 percent health setting can reach exactly 100 percent");
+Check(LobbyScaling.StepRate(1.1f, -1) == 1.05f && LobbyScaling.StepRate(1.05f, -1) == 1f, "110 percent setting steps down to exactly 100 percent");
+Check(LobbyScaling.StepRate(0, -1) == 0 && LobbyScaling.StepRate(3, 1) == 3, "percentage controls stay within bounds");
 for (var count = 1; count <= 5; count++)
     Check(LobbyScaling.Multiplier(count, 1f) == count, $"default health and spawn scaling is {count}x for {count} players");
 Check(LobbyScaling.Multiplier(5, 0f) == 1f, "host can disable player scaling");

@@ -5,7 +5,7 @@ This is a modified Megabonk Together 5.1.0, based on upstream commit
 https://github.com/Fcornaire/megabonk-together
 
 The original authors retain their copyright. This edition and its changes are
-distributed under GPL-2.0; see LICENSE. Changes were made on 12–13 September 2026.
+distributed under GPL-2.0; see LICENSE. Changes were made on 12–14 September 2026.
 BonkWithFriends was inspected as a reference; its DLL and decompiled code are
 not part of this distribution.
 
@@ -17,8 +17,8 @@ networking API or manual port forwarding is used by the mod. Each player needs
 their own compatible game installation and internet access to the public service.
 
 The upstream gameplay implementation synchronizes players, enemies, bosses,
-damage, pickups, interactables and run transitions. Shared experience is enabled
-by default and also shares gold earned; purchases still spend each player's own
+damage, pickups, interactables and run transitions. Gold earnings are shared
+independently of the shared-experience setting; purchases still spend each player's own
 balance. Reviving uses the upstream coffin/ghost encounter. Writing to the game's
 own single-player progression save stays disabled during netplay.
 
@@ -47,15 +47,16 @@ Each checkpoint holds:
 - the world objects still standing, and every chest, shrine and interactable the
   players already used up.
 
-Two things use it:
+World restoration uses stable player identities:
 
 - **Resuming a world.** With `ResumeLastWorld` on, hosting the same stage again
   restores the newest checkpoint for it: the enemies respawn where they were with
   the health they had, and every player gets their own character back. Each peer
   applies its own state from the same records, so all screens agree.
-- **Rejoining.** Every installation has a stable `PlayerIdentity` in its config.
-  A player who drops out and comes back to the same session is matched on that id
-  and handed their own inventory, health and gold rather than a fresh character.
+- **Player matching.** Every installation has a stable `PlayerIdentity` in its
+  config. Saved player records use that identity when restoring a world.
+  Mid-run rejoining is still blocked by the public matchmaking service; gather
+  players in the lobby before resuming a saved world.
 
 Settings live under `[CoopSaves]`: `CoopWorldSaves`, `ResumeLastWorld`,
 `CoopAutosaveSeconds` and `CoopWorldsKept`.
@@ -66,19 +67,10 @@ as it appears, before any player is told it exists, matched on what it is and
 where it stands. Nothing is dropped unless it matches, so a stage that generates
 differently simply comes back whole rather than half-empty.
 
-What a checkpoint does not carry, because the game does not keep it in a form
-that can be replayed:
-
-- pickups lying on the ground;
-- enemy debuffs, special attack timers, charm and teleport state;
-- projectiles in flight;
-- tome rarity and the per-level history of tome modifiers: the game keeps only the
-  accumulated total, which is what gets restored;
-- boss orb health.
-
-Every checkpoint logs exactly which of these it could not capture, and a
-checkpoint whose run configuration or players could not be read is never offered
-for resume.
+Restoration is not a complete simulation snapshot. Known gaps include projectiles
+in flight, mid-attack phases, queued effects, pickup magnet motion, and boss orb
+projectile motion/lifetime. Some newer state adapters have only been compile
+checked. See the release validation for what was actually tested.
 
 ## Changes in this edition
 

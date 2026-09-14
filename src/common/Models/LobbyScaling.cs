@@ -19,5 +19,7 @@ public partial class LobbyScaling
 
     public bool IsValid() => ValidRate(EnemyHealthPerPlayer) && ValidRate(BossHealthPerPlayer)
         && ValidRate(SpawnsPerPlayer) && EnemyCap is >= 100 and <= 2500;
+    public static float StepRate(float value, int direction) => Math.Clamp(
+        (MathF.Round(value * 100f / 5f) + Math.Sign(direction)) * 5f, 0f, 300f) / 100f;
     private static bool ValidRate(float value) => float.IsFinite(value) && value >= 0 && value <= 3;
 }

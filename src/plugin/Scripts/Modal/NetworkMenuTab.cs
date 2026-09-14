@@ -1,4 +1,4 @@
-﻿using Assets.Scripts.Settings___Saves.SaveFiles;
+using Assets.Scripts.Settings___Saves.SaveFiles;
 using Microsoft.Extensions.DependencyInjection;
 using MegabonkTogether.Services;
 using System.Collections.Generic;
@@ -1194,7 +1194,7 @@ namespace MegabonkTogether.Scripts
                 button.onClick = new();
                 button.gameObject.AddComponent<CustomButton>().SetOnClickAction(() =>
                 {
-                    write(Mathf.Clamp(read() + step * (cap ? 100 : .25f), cap ? 100 : 0, cap ? 2500 : 3));
+                    write(cap ? Mathf.Clamp(read() + step * 100, 100, 2500) : LobbyScaling.StepRate(read(), step));
                     Refresh();
                 });
             }
@@ -1407,7 +1407,7 @@ namespace MegabonkTogether.Scripts
 
             mainMenu.GoToCharacterSelection();
 
-            var characterMenu = WindowManager.activeWindow as CharacterMenu;
+            var characterMenu = WindowManager.activeWindow?.GetComponent<CharacterMenu>();
             if (characterMenu != null)
             {
                 characterMenu.selectedButton = characterMenu.characterButtons[0];
@@ -1493,7 +1493,7 @@ namespace MegabonkTogether.Scripts
 
             mainMenu.GoToCharacterSelection();
 
-            var characterMenu = WindowManager.activeWindow as CharacterMenu;
+            var characterMenu = WindowManager.activeWindow?.GetComponent<CharacterMenu>();
             if (characterMenu != null)
             {
                 characterMenu.selectedButton = characterMenu.characterButtons[0];
