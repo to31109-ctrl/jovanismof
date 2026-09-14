@@ -35,12 +35,22 @@ namespace MegabonkTogether.Services
         private const float baseBossLampInitialChargeTimeSeconds = 3.0f;
 
 
-        public int GetMaxEnemiesSpawnable() => Scaling.ResolveEnemyCap(PlayersCount, SinglePlayerEnemyCap);
+        public int GetMaxEnemiesSpawnable() => Scaling.ResolveEnemyCap(PlayersCount, SinglePlayerEnemyCap, PooledEnemyCap);
 
         /// <summary>
         /// What the game itself allows on screen for one player. Asked of the game rather than
         /// written down here, so it stays right if a patch changes it.
         /// </summary>
+        /// <summary>How many enemies the game has actually allocated. Nothing may exceed this.</summary>
+        private static int PooledEnemyCap
+        {
+            get
+            {
+                try { return EnemyManager.maxNumEnemiesPooled; }
+                catch { return 0; }
+            }
+        }
+
         private static int SinglePlayerEnemyCap
         {
             get

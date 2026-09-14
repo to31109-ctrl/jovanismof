@@ -3798,6 +3798,11 @@ namespace MegabonkTogether.Services
         {
             TransitionToState(GameEvent.Loading);
 
+            // Done first: it may change which stage this run starts on, and everything below
+            // -- the resume itself and what the clients are told -- must see that decision.
+            try { WorldSaves?.AlignRunToSelectedWorld(runConfig); }
+            catch (Exception ex) { logger.LogWarning($"Could not line the run up with the chosen world: {ex.Message}"); }
+
             try { WorldSaves?.PrepareResume((int)runConfig.mapData.eMap, runConfig.stageData?.name ?? ""); }
             catch (Exception ex) { logger.LogWarning($"Co-op checkpoint lookup failed: {ex.Message}"); }
 

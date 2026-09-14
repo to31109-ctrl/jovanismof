@@ -17,7 +17,7 @@ public partial class LobbyScaling
     /// is what a party actually expects: two players, twice the mobs. Any other value is a flat
     /// cap the host has chosen by hand.
     /// </summary>
-    public int EnemyCap { get; set; } = AutomaticEnemyCap;
+    public int EnemyCap { get; set; } = 1500;
 
     /// <summary>The setting value that means "scale it with the party" rather than a fixed number.</summary>
     public const int AutomaticEnemyCap = 0;
@@ -26,11 +26,25 @@ public partial class LobbyScaling
     /// The ceiling on active mobs. <paramref name="singlePlayerCap"/> is the game's own limit
     /// for one player, so the party gets that many each.
     /// </summary>
-    public int ResolveEnemyCap(int players, int singlePlayerCap)
+    /// <summary>
+    /// The ceiling on active mobs. <paramref name="singlePlayerCap"/> is the game's own limit
+    /// for one player and <paramref name="pooledCap"/> is how many enemies the game has
+    /// actually allocated.
+    ///
+    /// Nothing may exceed the pool. The game reuses enemies from a fixed set, so asking for
+    /// more active ones than it owns makes it recycle enemies that are still alive: they jump
+    /// across the map, and a boss cannot be spawned because there is nothing left to spawn it
+    /// from. That is what scaling the cap by player count did without this clamp.
+    /// </summary>
+    public int ResolveEnemyCap(int players, int singlePlayerCap, int pooledCap)
     {
-        if (EnemyCap != AutomaticEnemyCap) return EnemyCap;
-        if (singlePlayerCap <= 0) return 1500;
-        return Math.Clamp(singlePlayerCap * Math.Clamp(players, 1, 5), singlePlayerCap, 12000);
+        var wanted = EnemyCap != AutomaticEnemyCap
+            ? EnemyCap
+            : singlePlayerCap <= 0 ? 1500 : singlePlayerCap * Math.Clamp(players, 1, 5);
+
+        // Headroom kept free so a boss always has something to be spawned from.
+        if (pooledCap > 0) wanted = Math.Min(wanted, Math.Max(100, pooledCap - 25));
+        return Math.Max(100, wanted);
     }
 
     public static float Multiplier(int players, float perExtraPlayer) =>

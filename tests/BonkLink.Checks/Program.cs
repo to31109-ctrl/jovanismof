@@ -25,6 +25,34 @@ for (var count = 1; count <= 5; count++)
 Check(LobbyScaling.Multiplier(5, 0f) == 1f, "host can disable player scaling");
 Check(LobbyScaling.Multiplier(3, .5f) == 2f, "custom 50 percent scaling gives 2x for three players");
 Check(!new LobbyScaling { SpawnsPerPlayer = float.NaN }.IsValid(), "invalid lobby scaling is rejected");
+// The game reuses enemies from a fixed pool. Going past it makes it recycle enemies that are
+// still alive, which is enemies teleporting around the map and bosses with nothing to spawn
+// from. Nothing the host can set may exceed what the game actually allocated.
+var pooled = new LobbyScaling { EnemyCap = LobbyScaling.AutomaticEnemyCap };
+Check(pooled.ResolveEnemyCap(5, 1500, 800) <= 800 - 25, "automatic scaling never exceeds the enemy pool");
+Check(new LobbyScaling { EnemyCap = 2500 }.ResolveEnemyCap(1, 1500, 800) <= 800 - 25, "a hand-set cap never exceeds the enemy pool either");
+Check(pooled.ResolveEnemyCap(2, 500, 4000) == 1000, "two players get twice one player's mobs when the pool allows it");
+Check(pooled.ResolveEnemyCap(1, 500, 4000) == 500, "one player gets the game's own limit");
+Check(pooled.ResolveEnemyCap(3, 0, 0) >= 100, "an unknown limit still leaves a usable cap");
+Check(pooled.ResolveEnemyCap(5, 1500, 110) >= 100, "a tiny pool still leaves room to play");
+
+// Continuing a world. A run always begins on a map's first stage, so a world saved further in
+// could never be continued and the host silently got a new one instead.
+var forest = new[] { "StageForest1", "StageForest2", "StageForest3" };
+Check(WorldResume.Decide(1, "StageForest2", 1, "StageForest1", forest) == ResumeDecision.SwitchStage,
+      "a world saved on a later stage starts that stage instead of a new run");
+Check(WorldResume.Decide(1, "StageForest1", 1, "StageForest1", forest) == ResumeDecision.AlreadyAligned,
+      "a world saved on the first stage needs no change");
+Check(WorldResume.Decide(2, "StageDesert1", 1, "StageForest1", forest) == ResumeDecision.WrongMap,
+      "a world from another map is not silently loaded into this one");
+Check(WorldResume.Decide(1, "StageForest9", 1, "StageForest1", forest) == ResumeDecision.StageMissing,
+      "a world saved on a stage this map no longer has is refused");
+Check(WorldResume.Decide(null, "", 1, "StageForest1", forest) == ResumeDecision.StartNew,
+      "choosing no world starts a new run");
+Check(WorldResume.Explain(ResumeDecision.WrongMap, "Desert - StageDesert1", "StageDesert1").Length > 0,
+      "a host who cannot continue a world is told why");
+Check(WorldResume.Explain(ResumeDecision.AlreadyAligned, "x", "y").Length == 0,
+      "nothing is said when the world loads normally");
 var rulesMessage = new RunStarted { Scaling = new LobbyScaling { EnemyHealthPerPlayer = .5f, BossHealthPerPlayer = 2f, SpawnsPerPlayer = .25f, EnemyCap = 900 } };
 var receivedRules = MemoryPackSerializer.Deserialize<RunStarted>(MemoryPackSerializer.Serialize(rulesMessage));
 Check(receivedRules!.Scaling.EnemyCap == 900 && receivedRules.Scaling.BossHealthPerPlayer == 2f && receivedRules.Scaling.SpawnsPerPlayer == .25f, "host scaling survives the run-start network message");

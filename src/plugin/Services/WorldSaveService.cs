@@ -3,6 +3,7 @@ using BepInEx.Logging;
 using MegabonkTogether.Common.Messages;
 using MegabonkTogether.Common.Persistence;
 using MegabonkTogether.Configuration;
+using Assets.Scripts.Game.Other;
 using Assets.Scripts.Managers;
 using MegabonkTogether.Helpers;
 using MegabonkTogether.Persistence;
@@ -31,6 +32,12 @@ namespace MegabonkTogether.Services
 
         /// <summary>Host: pick up the newest checkpoint for the stage that is about to load.</summary>
         void PrepareResume(int map, string stage);
+
+        /// <summary>
+        /// Points the run that is starting at the stage the chosen world was saved on, so a
+        /// world left on a later stage can actually be continued.
+        /// </summary>
+        void AlignRunToSelectedWorld(RunConfig runConfig);
 
         /// <summary>Host: apply any prepared checkpoint once the stage and peers are live.</summary>
         void OnSessionStarted();
@@ -278,6 +285,58 @@ namespace MegabonkTogether.Services
             }
         }
 
+        public void AlignRunToSelectedWorld(RunConfig runConfig)
+        {
+            // A run always begins on the first stage of a map. A world saved any further in
+            // therefore never matched the stage being started, and was silently abandoned in
+            // favour of a new one -- which is what "hosting just makes a new game" was.
+            if (sessionLive || !Enabled || SelectedWorldId == Guid.Empty) return;
+            if (runConfig == null || runConfig.mapData == null) return;
+
+            try
+            {
+                var candidate = ListWorlds().FirstOrDefault(w => w.WorldId == SelectedWorldId);
+                if (candidate == null) return;
+
+                var available = new List<string>();
+                var stages = runConfig.mapData.stages;
+                if (stages != null)
+                {
+                    for (var i = 0; i < stages.Count; i++)
+                    {
+                        if (stages[i] != null) available.Add(stages[i].name);
+                    }
+                }
+
+                var decision = WorldResume.Decide(
+                    candidate.Map, candidate.Stage,
+                    (int)runConfig.mapData.eMap, runConfig.stageData?.name ?? "",
+                    available);
+
+                if (decision == ResumeDecision.SwitchStage)
+                {
+                    for (var i = 0; i < stages.Count; i++)
+                    {
+                        if (stages[i] == null || !string.Equals(stages[i].name, candidate.Stage, StringComparison.Ordinal)) continue;
+                        runConfig.stageData = stages[i];
+                        logger.LogInfo($"Continuing {candidate.Name}: starting on {candidate.Stage} rather than the first stage.");
+                        return;
+                    }
+                }
+
+                if (decision is ResumeDecision.WrongMap or ResumeDecision.StageMissing)
+                {
+                    var message = WorldResume.Explain(decision, candidate.Name, candidate.Stage);
+                    logger.LogWarning($"{candidate.Name} cannot be continued from here: {decision}");
+                    try { Plugin.Instance.ShowModal(message); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Could not line the run up with the chosen world: {ex.Message}");
+            }
+        }
+
         public void PrepareResume(int map, string stage)
         {
             pendingResume = null;
@@ -301,7 +360,10 @@ namespace MegabonkTogether.Services
 
                 if (candidate.Map != map || !string.Equals(candidate.Stage, stage, StringComparison.Ordinal))
                 {
-                    logger.LogWarning($"{candidate.Name} is saved on a different stage than the one starting; starting a new world instead");
+                    // Aligning the run should have prevented this. Saying so out loud beats
+                    // silently handing the host a new world and letting them think it was lost.
+                    logger.LogWarning($"{candidate.Name} is saved on {candidate.Stage} but {stage} is starting; a new world is being started instead.");
+                    try { Plugin.Instance.ShowModal($"{candidate.Name} could not be continued.\nIt is saved on {candidate.Stage}."); } catch { }
                     return;
                 }
             }

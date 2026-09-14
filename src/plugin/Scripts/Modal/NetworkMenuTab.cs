@@ -496,7 +496,7 @@ namespace MegabonkTogether.Scripts
         private void CreateWorldPicker()
         {
             worldChooseButton = CreateMenuButton("WorldChooseButton", panel.transform,
-                new Vector2(0f, 150f), new Vector2(620f, 56f), 20f,
+                new Vector2(0f, 125f), new Vector2(560f, 50f), 18f,
                 TextAlignmentOptions.Center, () => ShowWorldScreen(true), out worldChooseLabel);
             worldChooseButton.gameObject.SetActive(false);
 
@@ -674,7 +674,7 @@ namespace MegabonkTogether.Scripts
         /// button machinery that calls OnClick. Cloning a real one is what every working
         /// button on this screen already does.
         /// </summary>
-        private CustomButton CreateMenuButton(string name, Transform parent, Vector2 position, Vector2 size, float fontSize, TextAlignmentOptions alignment, System.Action onClick, out TextMeshProUGUI label)
+        private CustomButton CreateMenuButton(string name, Transform parent, Vector2 position, Vector2 size, float fontSize, TextAlignmentOptions alignment, System.Action onClick, out TextMeshProUGUI label, bool anchorToTop = false)
         {
             var mainMenu = Plugin.Instance.GetMainMenu();
             var obj = GameObject.Instantiate(mainMenu.btnPlay.gameObject);
@@ -719,10 +719,15 @@ namespace MegabonkTogether.Scripts
                 Plugin.Log.LogWarning($"Button '{name}' has no text to set; it will keep the one it was cloned with.");
             }
 
+            // Rows stack downwards from the top of the list, so they anchor to its top edge.
+            // Anything placed on the panel itself measures from its middle: anchored to the top
+            // edge, a positive offset pushes it clean off the panel and over the game's title,
+            // which is where the world button ended up.
+            var edge = anchorToTop ? 1f : 0.5f;
             var rect = obj.GetComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 1f);
-            rect.anchorMax = new Vector2(0.5f, 1f);
-            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchorMin = new Vector2(0.5f, edge);
+            rect.anchorMax = new Vector2(0.5f, edge);
+            rect.pivot = new Vector2(0.5f, anchorToTop ? 1f : 0.5f);
             rect.anchoredPosition = position;
             rect.sizeDelta = size;
 
@@ -738,12 +743,12 @@ namespace MegabonkTogether.Scripts
             var row = CreateMenuButton("WorldRow" + index, worldListRoot.transform,
                 new Vector2(-(WorldRowWidth - rowWidth) / 2f, -index * WorldRowHeight),
                 new Vector2(rowWidth, WorldRowHeight - 8f),
-                17f, TextAlignmentOptions.Left, () => OnWorldRowClicked(index), out var rowLabel);
+                17f, TextAlignmentOptions.Left, () => OnWorldRowClicked(index), out var rowLabel, true);
 
             var delete = CreateMenuButton("WorldDelete" + index, worldListRoot.transform,
                 new Vector2((WorldRowWidth - deleteWidth) / 2f, -index * WorldRowHeight),
                 new Vector2(deleteWidth, WorldRowHeight - 14f),
-                16f, TextAlignmentOptions.Center, () => OnWorldDeleteClicked(index), out var deleteLabel);
+                16f, TextAlignmentOptions.Center, () => OnWorldDeleteClicked(index), out var deleteLabel, true);
 
             if (deleteLabel != null)
             {
@@ -791,6 +796,12 @@ namespace MegabonkTogether.Scripts
             worldChoiceIndex = choice;
             worldPendingDelete = System.Guid.Empty;
             ApplyWorldChoice();
+
+            // Choosing closes the list and returns to Friendlies, where the button now names
+            // what was picked. Selecting in place gave no sign anything had happened, which is
+            // why picking a world and pressing Create New World both looked like dead buttons.
+            // Naming a new world is the one reason to stay: the box is right there.
+            if (worldChoices[choice] != System.Guid.Empty) ShowWorldScreen(false);
         }
 
         private void OnWorldDeleteClicked(int rowIndex)
@@ -833,15 +844,12 @@ namespace MegabonkTogether.Scripts
                 var row = worldRows[i];
                 var choice = worldListOffset + i;
 
-                if (choice >= worldChoices.Count)
+                // Delete is its own object beside the row, so hiding the row alone left it
+                // behind: four Delete buttons next to two worlds.
+                if (choice >= worldChoices.Count || choice >= worldTitles.Count || choice >= worldLabels.Count)
                 {
                     row.Root.SetActive(false);
-                    continue;
-                }
-
-                if (choice >= worldTitles.Count || choice >= worldLabels.Count)
-                {
-                    row.Root.SetActive(false);
+                    row.Delete.SetActive(false);
                     continue;
                 }
 
