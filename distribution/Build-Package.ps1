@@ -86,5 +86,9 @@ No Megabonk game binaries or BonkWithFriends binaries/source are included.
     # existing copy has to switch it on without disturbing the rest of their settings.
     & (Join-Path $PSScriptRoot 'Test-ExistingConfig.ps1') -StageDirectory $stage -GamePath $GamePath
 
+    # The splash has to report the update and stay up until it finishes downloading.
+    # Reading the script cannot show that, so this drives it against a stand-in game.
+    & (Join-Path $PSScriptRoot 'Test-Splash.ps1') -StageDirectory $stage
+
     Write-Host "Staged at $stage. Add the verified VALIDATION.txt before creating the final ZIP."
 } finally { Pop-Location }

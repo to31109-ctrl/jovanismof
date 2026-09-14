@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
@@ -9,7 +9,7 @@
     <Product>JOVANISMOF</Product>
     <BepInExPluginGuid>MegabonkTogether</BepInExPluginGuid>
     <BepInExPluginName>JOVANISMOF</BepInExPluginName>
-    <Version>5.1.3</Version>
+    <Version>5.1.4</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
     <RestoreAdditionalProjectSources>
@@ -38,6 +38,9 @@
 		<None Include="CHANGELOG.toml">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+		<!-- The splash lives beside the game, where an update cannot reach it. Carrying a copy
+		     here is what lets a change to it arrive with a normal plugin update. -->
+		<EmbeddedResource Include="..\..\distribution\Splash.ps1" LogicalName="JOVANISMOF.Splash.ps1" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -132,5 +135,6 @@
 		<Exec Command="mkdir -p &quot;$(PluginPath)/MegabonkTogether&quot; &amp;&amp; cp -r &quot;$(TargetDir)&quot;* &quot;$(PluginPath)/MegabonkTogether/&quot;" Condition=" '$(PluginPath)' != '' And '$(Configuration)' == 'Debug' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' " />
 	</Target>
 </Project>
+
 
 

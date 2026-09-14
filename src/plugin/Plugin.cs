@@ -170,8 +170,15 @@ namespace MegabonkTogether
             _ = Host.StartAsync(cancellationToken);
             var autoUpdaterService = Services.GetRequiredService<IAutoUpdaterService>();
 
+            // Carries any change to the splash out to the launcher, which an update cannot
+            // reach on its own. Takes effect on the launch after this one.
+            MegabonkTogether.Services.LauncherFiles.Refresh(Log);
+
             if (ModConfig.CheckForUpdates.Value)
             {
+                // Written before the ready marker below, so the splash already knows a check is
+                // coming and waits for it instead of closing the moment loading finishes.
+                MegabonkTogether.Services.UpdateStatus.Checking();
                 autoUpdaterService.Initialize();
 
                 MegabonkTogether.Scripts.MainThreadDispatcher.Run(async () =>
@@ -187,12 +194,14 @@ namespace MegabonkTogether
                     catch (Exception ex)
                     {
                         Log.LogError($"Auto-update check failed: {ex.Message}");
+                        MegabonkTogether.Services.UpdateStatus.Failed(ex.Message);
                     }
                 });
             }
             else
             {
                 Log.LogInfo("Auto-update is disabled in configuration.");
+                MegabonkTogether.Services.UpdateStatus.UpToDate();
             }
 
             try

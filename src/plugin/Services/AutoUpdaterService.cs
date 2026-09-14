@@ -150,6 +150,7 @@ namespace MegabonkTogether.Common
             // silence is the right behaviour: this must never reach out on its own guess.
             if (!HasRepository)
             {
+                UpdateStatus.UpToDate();
                 return false;
             }
 
@@ -177,6 +178,7 @@ namespace MegabonkTogether.Common
                 if (latestRelease == null)
                 {
                     logger.LogInfo("No releases found");
+                    UpdateStatus.UpToDate();
                     return false;
                 }
 
@@ -204,12 +206,14 @@ namespace MegabonkTogether.Common
                 else
                 {
                     logger.LogInfo($"Already on latest version: {currentVersion}");
+                    UpdateStatus.UpToDate();
                     return false;
                 }
             }
             catch (Exception ex)
             {
                 logger.LogError($"Error checking for updates: {ex.Message}");
+                UpdateStatus.Failed(ex.Message);
                 return false;
             }
         }
@@ -257,6 +261,7 @@ namespace MegabonkTogether.Common
                 if (asset == null)
                 {
                     logger.LogError("No suitable asset found in release");
+                    UpdateStatus.Failed("That release has no update file attached.");
                     return false;
                 }
 
@@ -269,17 +274,19 @@ namespace MegabonkTogether.Common
 
                 CleanupOldUpdateFiles(pluginDirectory);
 
-                await DownloadFile(downloadUrl, downloadPath);
+                await DownloadFile(downloadUrl, downloadPath, release.TagName);
 
                 GenerateUpdaterBatchFile(pluginDirectory, release.TagName);
 
                 logger.LogInfo($"Update {release.TagName} downloaded. Quit the game to apply.");
+                UpdateStatus.Ready(release.TagName);
 
                 return true;
             }
             catch (Exception ex)
             {
                 logger.LogError($"Error preparing update: {ex.Message}");
+                UpdateStatus.Failed(ex.Message);
                 return false;
             }
         }
@@ -474,7 +481,7 @@ namespace MegabonkTogether.Common
             }
         }
 
-        private async Task DownloadFile(string url, string destinationPath)
+        private async Task DownloadFile(string url, string destinationPath, string version)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Add("Accept", "application/octet-stream");
@@ -489,8 +496,30 @@ namespace MegabonkTogether.Common
 
             response.EnsureSuccessStatusCode();
 
+            // Copied a block at a time rather than in one call, so the splash window can show
+            // how far along it is. A server that does not give a length leaves total at -1,
+            // and the splash keeps an indeterminate bar instead of inventing a percentage.
+            var total = response.Content.Headers.ContentLength ?? -1L;
+            UpdateStatus.Downloading(version, total > 0 ? 0 : -1);
+
+            using var source = await response.Content.ReadAsStreamAsync();
             using var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
-            await response.Content.CopyToAsync(fileStream);
+
+            var buffer = new byte[81920];
+            long received = 0;
+            var lastReported = -1;
+            int read;
+            while ((read = await source.ReadAsync(buffer, 0, buffer.Length)) > 0)
+            {
+                await fileStream.WriteAsync(buffer, 0, read);
+                received += read;
+
+                if (total <= 0) continue;
+                var percent = (int)(received * 100 / total);
+                if (percent == lastReported) continue;
+                lastReported = percent;
+                UpdateStatus.Downloading(version, percent);
+            }
         }
 
         private static void CleanupOldUpdateFiles(string pluginDirectory)
