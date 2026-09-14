@@ -498,8 +498,8 @@ namespace MegabonkTogether.Scripts
             rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
             rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
             rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            rectTransform.anchoredPosition = new Vector2(0, 130f);
-            rectTransform.sizeDelta = new Vector2(760, 60);
+            rectTransform.anchoredPosition = new Vector2(0, 205f);
+            rectTransform.sizeDelta = new Vector2(760, 50);
 
             var textComponents = Il2CppFindHelper.RuntimeGetComponentsInChildren<TextMeshProUGUI>(worldPickerSetting);
             foreach (var textComp in textComponents)
@@ -556,8 +556,8 @@ namespace MegabonkTogether.Scripts
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = new Vector2(150f, 90f);
-            rect.sizeDelta = new Vector2(320, 40);
+            rect.anchoredPosition = new Vector2(110f, -125f);
+            rect.sizeDelta = new Vector2(330, 42);
 
             var image = worldNameRow.AddComponent<Image>();
             image.color = new Color(0.2f, 0.2f, 0.2f, 1f);
@@ -584,14 +584,18 @@ namespace MegabonkTogether.Scripts
             labelRect.anchorMin = new Vector2(0.5f, 0.5f);
             labelRect.anchorMax = new Vector2(0.5f, 0.5f);
             labelRect.pivot = new Vector2(0.5f, 0.5f);
-            labelRect.anchoredPosition = new Vector2(-135f, 90f);
-            labelRect.sizeDelta = new Vector2(240, 40);
+            labelRect.anchoredPosition = new Vector2(-185f, -125f);
+            labelRect.sizeDelta = new Vector2(250, 42);
             var labelText = labelObj.AddComponent<TextMeshProUGUI>();
             labelText.text = "New world name";
             labelText.fontSize = 18;
             labelText.alignment = TextAlignmentOptions.Right;
             labelText.color = new Color(0.8f, 0.85f, 0.95f, 1f);
             labelObj.transform.SetParent(worldNameRow.transform, true);
+
+            // Shown only once a world that does not exist yet is selected, on the Friendlies
+            // screen. Left on, it floats over the main menu.
+            worldNameRow.SetActive(false);
         }
 
         /// <summary>
@@ -608,18 +612,25 @@ namespace MegabonkTogether.Scripts
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = new Vector2(0f, 110f);
+            rect.anchoredPosition = new Vector2(0f, 175f);
             rect.sizeDelta = new Vector2(WorldRowWidth, WorldRowHeight * VisibleWorldRows);
 
             for (var i = 0; i < VisibleWorldRows; i++) worldRows.Add(CreateWorldRow(i));
 
             // Only shown when there are more worlds than fit on screen.
             worldScrollUp = CreateMenuButton("WorldScrollUp", worldListRoot.transform,
-                new Vector2(WorldRowWidth / 2f + 34f, 0f), new Vector2(56f, 44f), 16f,
-                TextAlignmentOptions.Center, () => ScrollWorldList(-1), out _).gameObject;
+                new Vector2(WorldRowWidth / 2f + 30f, -2f), new Vector2(48f, 40f), 15f,
+                TextAlignmentOptions.Center, () => ScrollWorldList(-1), out var upLabel).gameObject;
             worldScrollDown = CreateMenuButton("WorldScrollDown", worldListRoot.transform,
-                new Vector2(WorldRowWidth / 2f + 34f, -(WorldRowHeight * (VisibleWorldRows - 1))), new Vector2(56f, 44f), 16f,
-                TextAlignmentOptions.Center, () => ScrollWorldList(1), out _).gameObject;
+                new Vector2(WorldRowWidth / 2f + 30f, -(WorldRowHeight * (VisibleWorldRows - 1)) - 2f), new Vector2(48f, 40f), 15f,
+                TextAlignmentOptions.Center, () => ScrollWorldList(1), out var downLabel).gameObject;
+            if (upLabel != null) upLabel.text = "UP";
+            if (downLabel != null) downLabel.text = "DN";
+
+            // Belongs to the Friendlies screen only. Left visible it covers the main menu,
+            // which is exactly what it did: rows behind the menu buttons and Delete buttons
+            // hanging off the side of the panel.
+            worldListRoot.SetActive(false);
         }
 
         /// <summary>
@@ -650,15 +661,29 @@ namespace MegabonkTogether.Scripts
             var custom = obj.AddComponent<CustomButton>();
             custom.SetOnClickAction(onClick);
 
+            // The wrapper is the normal way in, but if it is missing the clone keeps saying
+            // "PLAY" for ever, which is what the Delete buttons were doing. Fall back to
+            // whatever text this button actually carries.
             label = null;
             var wrapper = obj.GetComponent<ButtonTextWrapper>();
-            if (wrapper != null && wrapper.t_text != null)
+            if (wrapper != null && wrapper.t_text != null) label = wrapper.t_text;
+            if (label == null)
             {
-                label = wrapper.t_text;
+                var texts = Il2CppFindHelper.RuntimeGetComponentsInChildren<TextMeshProUGUI>(obj, true);
+                foreach (var candidate in texts) { label = candidate; break; }
+            }
+
+            if (label != null)
+            {
                 label.fontSize = fontSize;
                 label.alignment = alignment;
                 label.enableWordWrapping = false;
                 label.richText = true;
+                label.text = "";
+            }
+            else
+            {
+                Plugin.Log.LogWarning($"Button '{name}' has no text to set; it will keep the one it was cloned with.");
             }
 
             var rect = obj.GetComponent<RectTransform>();
@@ -673,13 +698,25 @@ namespace MegabonkTogether.Scripts
 
         private WorldRow CreateWorldRow(int index)
         {
+            const float deleteWidth = 120f;
+            const float gap = 8f;
+            var rowWidth = WorldRowWidth - deleteWidth - gap;
+
             var row = CreateMenuButton("WorldRow" + index, worldListRoot.transform,
-                new Vector2(-70f, -index * WorldRowHeight), new Vector2(WorldRowWidth - 150f, WorldRowHeight - 6f),
-                18f, TextAlignmentOptions.Left, () => OnWorldRowClicked(index), out var rowLabel);
+                new Vector2(-(WorldRowWidth - rowWidth) / 2f, -index * WorldRowHeight),
+                new Vector2(rowWidth, WorldRowHeight - 8f),
+                17f, TextAlignmentOptions.Left, () => OnWorldRowClicked(index), out var rowLabel);
 
             var delete = CreateMenuButton("WorldDelete" + index, worldListRoot.transform,
-                new Vector2(WorldRowWidth / 2f - 70f, -index * WorldRowHeight), new Vector2(130f, WorldRowHeight - 12f),
-                17f, TextAlignmentOptions.Center, () => OnWorldDeleteClicked(index), out var deleteLabel);
+                new Vector2((WorldRowWidth - deleteWidth) / 2f, -index * WorldRowHeight),
+                new Vector2(deleteWidth, WorldRowHeight - 14f),
+                16f, TextAlignmentOptions.Center, () => OnWorldDeleteClicked(index), out var deleteLabel);
+
+            if (deleteLabel != null)
+            {
+                deleteLabel.text = "Delete";
+                deleteLabel.color = new Color(1f, 0.82f, 0.82f, 1f);
+            }
 
             return new WorldRow { Root = row.gameObject, Label = rowLabel, Delete = delete.gameObject, DeleteText = deleteLabel };
         }
@@ -1621,7 +1658,12 @@ namespace MegabonkTogether.Scripts
 
             // The stepper row is now only the heading above the list.
             if (worldPickerSetting != null) worldPickerSetting.SetActive(isVisible);
-            if (worldListRoot != null) worldListRoot.SetActive(isVisible);
+            if (worldListRoot != null)
+            {
+                worldListRoot.SetActive(isVisible);
+                // Drawn last so nothing on the panel sits over the rows and swallows a click.
+                if (isVisible) worldListRoot.transform.SetAsLastSibling();
+            }
             if (worldNameRow != null && !isVisible) worldNameRow.SetActive(false);
             if (isVisible) RefreshWorldChoices();
         }

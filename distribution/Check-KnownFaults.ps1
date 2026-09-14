@@ -102,7 +102,21 @@ foreach ($file in $source) {
     }
 }
 
-# 6. A test build must never be shipped: it redirects saves and quits on a timer.
+# 6. Anything the mod adds to the netplay panel belongs to one screen inside it. Built
+#    without being switched off, it is visible the moment the menu opens: the world list
+#    appeared over the main menu, its rows hidden behind the menu's own buttons and its
+#    Delete buttons hanging off the side of the panel.
+$menu = Join-Path $repo 'src/plugin/Scripts/Modal/NetworkMenuTab.cs'
+if (Test-Path -LiteralPath $menu) {
+    $menuText = Get-Content -Raw -LiteralPath $menu
+    foreach ($element in @('worldPickerSetting', 'worldNameRow', 'worldListRoot')) {
+        if ($menuText -notmatch ([regex]::Escape($element) + '\.SetActive\(\$?false\)')) {
+            $faults += "NetworkMenuTab.cs never hides '$element' when it is built, so it shows over the main menu."
+        }
+    }
+}
+
+# 7. A test build must never be shipped: it redirects saves and quits on a timer.
 foreach ($file in $source) {
     if ($file.Name -eq 'BonkLinkSmoke.cs') { continue }
     if ((Get-Content -Raw -LiteralPath $file.FullName) -match '#define\s+BONKLINK_TESTING') {
