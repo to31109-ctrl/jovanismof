@@ -200,6 +200,7 @@ namespace MegabonkTogether.Scripts.Interactables
             {
                 sawKeyHeld = true;
                 heldSeconds += Time.deltaTime;
+                ShowHoldProgress(heldSeconds / required);
                 if (heldSeconds >= required) BeginRevive();
                 return;
             }
@@ -215,7 +216,29 @@ namespace MegabonkTogether.Scripts.Interactables
                 return;
             }
 
+            if (heldSeconds > 0f) ShowHoldPrompt();
             heldSeconds = 0f;
+        }
+
+        /// <summary>A bar that fills as the key is held, so nobody taps once and walks away.</summary>
+        private void ShowHoldProgress(float fraction)
+        {
+            fraction = Mathf.Clamp01(fraction);
+            const int cells = 20;
+            var filled = Mathf.RoundToInt(fraction * cells);
+            var bar = new string('=', filled) + new string('-', cells - filled);
+            var who = "";
+            try { who = playerManagerService.GetPlayer(ownerId)?.Name ?? ""; } catch { }
+            var target = string.IsNullOrEmpty(who) ? "your friend" : who;
+
+            ScreenTextHelper.Show(
+                $"<size=30>Reviving {target}</size>\n<size=34>[{bar}] {fraction * 100f:F0}%</size>\n<size=22>Keep holding E</size>",
+                new Vector2(0, -300), false);
+        }
+
+        private void ShowHoldPrompt()
+        {
+            ScreenTextHelper.Show("<size=26>Hold E to revive</size>", new Vector2(0, -300), true);
         }
 
         private static float RequiredHoldSeconds
@@ -238,6 +261,7 @@ namespace MegabonkTogether.Scripts.Interactables
                 heldSeconds = 0f;
                 chargingSeconds = 0f;
                 sawKeyHeld = false;
+                ShowHoldProgress(0f);
                 return false;
             }
 
@@ -250,6 +274,9 @@ namespace MegabonkTogether.Scripts.Interactables
             if (hasInteracted) return;
             hasInteracted = true;
             charging = false;
+
+            try { ScreenTextHelper.Show("<size=30>Reviving...</size>", new Vector2(0, -300), true); }
+            catch { }
 
             this.gameObject.GetComponent<Collider>().enabled = false;
 

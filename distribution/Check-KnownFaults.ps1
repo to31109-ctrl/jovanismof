@@ -73,7 +73,36 @@ if ($installer -notmatch '\$PSScriptRoot,\s*\$target') {
     $faults += 'Install.ps1 no longer creates the shortcut in the extracted folder.'
 }
 
-# 5. A test build must never be shipped: it redirects saves and quits on a timer.
+# 5. CustomButton derives from the game's MyButton, and it is the game's own button machinery
+#    that calls OnClick. Added to a GameObject built from scratch it compiles, renders, and
+#    never responds to a click. Every working button on the mod's menus is a clone of a real
+#    one (GameObject.Instantiate) with MyButtonNormal stripped off. This is what left the
+#    world list's rows and Delete buttons dead on screen.
+#
+#    Judged by the nearest preceding assignment to that same variable, so a variable named
+#    the same thing in another method cannot make this fire.
+foreach ($file in $source) {
+    $lines = Get-Content -LiteralPath $file.FullName
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $hit = [regex]::Match($lines[$i], '(\w+)\s*\.AddComponent<CustomButton>')
+        if (!$hit.Success) { continue }
+        $name = $hit.Groups[1].Value
+
+        $builtFromNothing = $false
+        for ($j = $i; $j -ge 0 -and $j -gt $i - 60; $j--) {
+            $assigned = [regex]::Match($lines[$j], ('(?:var|GameObject)\s+' + [regex]::Escape($name) + '\s*=\s*(.+)$'))
+            if (!$assigned.Success) { continue }
+            $builtFromNothing = $assigned.Groups[1].Value -match 'new\s+GameObject\s*\('
+            break
+        }
+
+        if ($builtFromNothing) {
+            $faults += "$($file.Name):$($i + 1) adds a CustomButton to '$name', built with new GameObject(). It will render and never receive a click. Clone a real menu button instead."
+        }
+    }
+}
+
+# 6. A test build must never be shipped: it redirects saves and quits on a timer.
 foreach ($file in $source) {
     if ($file.Name -eq 'BonkLinkSmoke.cs') { continue }
     if ((Get-Content -Raw -LiteralPath $file.FullName) -match '#define\s+BONKLINK_TESTING') {

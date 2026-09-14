@@ -69,9 +69,7 @@ namespace MegabonkTogether.Scripts
         private sealed class WorldRow
         {
             public GameObject Root;
-            public Image Background;
-            public TextMeshProUGUI Title;
-            public TextMeshProUGUI Detail;
+            public TextMeshProUGUI Label;
             public GameObject Delete;
             public TextMeshProUGUI DeleteText;
         }
@@ -616,47 +614,74 @@ namespace MegabonkTogether.Scripts
             for (var i = 0; i < VisibleWorldRows; i++) worldRows.Add(CreateWorldRow(i));
 
             // Only shown when there are more worlds than fit on screen.
-            worldScrollUp = CreateListButton("WorldScrollUp", new Vector2(WorldRowWidth / 2f + 26f, -14f), "UP", () => ScrollWorldList(-1));
-            worldScrollDown = CreateListButton("WorldScrollDown", new Vector2(WorldRowWidth / 2f + 26f, -(WorldRowHeight * VisibleWorldRows) + 14f), "DN", () => ScrollWorldList(1));
+            worldScrollUp = CreateMenuButton("WorldScrollUp", worldListRoot.transform,
+                new Vector2(WorldRowWidth / 2f + 34f, 0f), new Vector2(56f, 44f), 16f,
+                TextAlignmentOptions.Center, () => ScrollWorldList(-1), out _).gameObject;
+            worldScrollDown = CreateMenuButton("WorldScrollDown", worldListRoot.transform,
+                new Vector2(WorldRowWidth / 2f + 34f, -(WorldRowHeight * (VisibleWorldRows - 1))), new Vector2(56f, 44f), 16f,
+                TextAlignmentOptions.Center, () => ScrollWorldList(1), out _).gameObject;
+        }
+
+        /// <summary>
+        /// Clones one of the game's own menu buttons for anything clickable.
+        ///
+        /// A bare GameObject with an Image on it looks like a button and never receives a
+        /// click: CustomButton derives from the game's MyButton, and it is the game's own
+        /// button machinery that calls OnClick. Cloning a real one is what every working
+        /// button on this screen already does.
+        /// </summary>
+        private CustomButton CreateMenuButton(string name, Transform parent, Vector2 position, Vector2 size, float fontSize, TextAlignmentOptions alignment, System.Action onClick, out TextMeshProUGUI label)
+        {
+            var mainMenu = Plugin.Instance.GetMainMenu();
+            var obj = GameObject.Instantiate(mainMenu.btnPlay.gameObject);
+            obj.name = name;
+            obj.transform.SetParent(parent, false);
+
+            var original = obj.GetComponent<MyButtonNormal>();
+            if (original != null) UnityEngine.Object.DestroyImmediate(original);
+
+            var innerButton = obj.GetComponentInChildren<UnityEngine.UI.Button>();
+            if (innerButton != null) innerButton.onClick = new();
+
+            // Left in place it would overwrite whatever text is set here with a translation.
+            var localize = obj.GetComponentInChildren<LocalizeStringEvent>();
+            if (localize != null) UnityEngine.Object.DestroyImmediate(localize);
+
+            var custom = obj.AddComponent<CustomButton>();
+            custom.SetOnClickAction(onClick);
+
+            label = null;
+            var wrapper = obj.GetComponent<ButtonTextWrapper>();
+            if (wrapper != null && wrapper.t_text != null)
+            {
+                label = wrapper.t_text;
+                label.fontSize = fontSize;
+                label.alignment = alignment;
+                label.enableWordWrapping = false;
+                label.richText = true;
+            }
+
+            var rect = obj.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = position;
+            rect.sizeDelta = size;
+
+            return custom;
         }
 
         private WorldRow CreateWorldRow(int index)
         {
-            var row = new GameObject("WorldRow" + index);
-            row.transform.SetParent(worldListRoot.transform, false);
+            var row = CreateMenuButton("WorldRow" + index, worldListRoot.transform,
+                new Vector2(-70f, -index * WorldRowHeight), new Vector2(WorldRowWidth - 150f, WorldRowHeight - 6f),
+                18f, TextAlignmentOptions.Left, () => OnWorldRowClicked(index), out var rowLabel);
 
-            var rect = row.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 1f);
-            rect.anchorMax = new Vector2(0.5f, 1f);
-            rect.pivot = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = new Vector2(0f, -index * WorldRowHeight);
-            rect.sizeDelta = new Vector2(WorldRowWidth, WorldRowHeight - 4f);
+            var delete = CreateMenuButton("WorldDelete" + index, worldListRoot.transform,
+                new Vector2(WorldRowWidth / 2f - 70f, -index * WorldRowHeight), new Vector2(130f, WorldRowHeight - 12f),
+                17f, TextAlignmentOptions.Center, () => OnWorldDeleteClicked(index), out var deleteLabel);
 
-            var background = row.AddComponent<Image>();
-            background.color = UnselectedRow;
-            row.AddComponent<CustomButton>().SetOnClickAction(() => OnWorldRowClicked(index));
-
-            var title = CreateRowText(row, "Title", new Vector2(14f, 0f), new Vector2(-150f, -4f), 19f, TextAlignmentOptions.TopLeft);
-            var detail = CreateRowText(row, "Detail", new Vector2(14f, 0f), new Vector2(-150f, -26f), 15f, TextAlignmentOptions.TopLeft);
-            detail.color = new Color(0.72f, 0.76f, 0.84f, 1f);
-
-            // Its own button, so picking a world and throwing one away can never be the same click.
-            var deleteObj = new GameObject("Delete");
-            deleteObj.transform.SetParent(row.transform, false);
-            var deleteRect = deleteObj.AddComponent<RectTransform>();
-            deleteRect.anchorMin = new Vector2(1f, 0.5f);
-            deleteRect.anchorMax = new Vector2(1f, 0.5f);
-            deleteRect.pivot = new Vector2(1f, 0.5f);
-            deleteRect.anchoredPosition = new Vector2(-10f, 0f);
-            deleteRect.sizeDelta = new Vector2(130f, WorldRowHeight - 16f);
-            var deleteImage = deleteObj.AddComponent<Image>();
-            deleteImage.color = new Color(0.35f, 0.12f, 0.12f, 1f);
-            var deleteText = CreateRowText(deleteObj, "DeleteText", Vector2.zero, Vector2.zero, 15f, TextAlignmentOptions.Center);
-            deleteText.text = "Delete";
-            deleteText.color = new Color(1f, 0.85f, 0.85f, 1f);
-            deleteObj.AddComponent<CustomButton>().SetOnClickAction(() => OnWorldDeleteClicked(index));
-
-            return new WorldRow { Root = row, Background = background, Title = title, Detail = detail, Delete = deleteObj, DeleteText = deleteText };
+            return new WorldRow { Root = row.gameObject, Label = rowLabel, Delete = delete.gameObject, DeleteText = deleteLabel };
         }
 
         private TextMeshProUGUI CreateRowText(GameObject parent, string name, Vector2 offsetMin, Vector2 offsetMax, float size, TextAlignmentOptions alignment)
@@ -674,23 +699,6 @@ namespace MegabonkTogether.Scripts
             text.enableWordWrapping = false;
             text.color = Color.white;
             return text;
-        }
-
-        private GameObject CreateListButton(string name, Vector2 position, string caption, System.Action onClick)
-        {
-            var obj = new GameObject(name);
-            obj.transform.SetParent(worldListRoot.transform, false);
-            var rect = obj.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 1f);
-            rect.anchorMax = new Vector2(0.5f, 1f);
-            rect.pivot = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = position;
-            rect.sizeDelta = new Vector2(38f, 38f);
-            obj.AddComponent<Image>().color = new Color(0.22f, 0.24f, 0.3f, 1f);
-            var text = CreateRowText(obj, "Caption", Vector2.zero, Vector2.zero, 16f, TextAlignmentOptions.Center);
-            text.text = caption;
-            obj.AddComponent<CustomButton>().SetOnClickAction(onClick);
-            return obj;
         }
 
         private void ScrollWorldList(int direction)
@@ -764,20 +772,25 @@ namespace MegabonkTogether.Scripts
                 row.Root.SetActive(true);
                 var id = worldChoices[choice];
                 var isNew = id == System.Guid.Empty;
+                var chosen = choice == worldChoiceIndex;
 
-                row.Title.text = isNew ? "+  Create New World" : worldTitles[choice];
-                row.Title.color = isNew ? new Color(0.75f, 0.92f, 1f, 1f) : Color.white;
-                row.Detail.text = isNew ? "Everyone starts fresh" : worldLabels[choice];
+                if (row.Label != null)
+                {
+                    var title = isNew ? "+  Create New World" : worldTitles[choice];
+                    var detail = isNew ? "Everyone starts fresh" : worldLabels[choice];
+                    var mark = chosen ? "> " : "  ";
+                    row.Label.text = $"{mark}{title}\n<size=13><color=#B4BECD>   {detail}</color></size>";
+                    row.Label.color = chosen ? new Color(0.62f, 1f, 0.68f, 1f)
+                        : isNew ? new Color(0.75f, 0.92f, 1f, 1f) : Color.white;
+                }
 
                 row.Delete.SetActive(!isNew);
                 if (!isNew && row.DeleteText != null)
                 {
                     var armed = worldPendingDelete == id;
                     row.DeleteText.text = armed ? "Sure?" : "Delete";
-                    row.DeleteText.color = armed ? new Color(1f, 0.55f, 0.55f, 1f) : new Color(1f, 0.85f, 0.85f, 1f);
+                    row.DeleteText.color = armed ? new Color(1f, 0.45f, 0.45f, 1f) : new Color(1f, 0.82f, 0.82f, 1f);
                 }
-
-                row.Background.color = choice == worldChoiceIndex ? SelectedRow : UnselectedRow;
             }
 
             if (worldScrollUp != null) worldScrollUp.SetActive(worldChoices.Count > VisibleWorldRows);
