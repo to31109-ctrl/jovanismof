@@ -1,4 +1,5 @@
 // BonkLink edition changes, 2026-09-12: bounded snapshot scheduling and corrected match guard.
+using MegabonkTogether.Common.Messages.GameNetworkMessages;
 using MegabonkTogether.Common.Networking;
 using Assets.Scripts._Data.MapsAndStages;
 using Assets.Scripts.Managers;
@@ -70,6 +71,74 @@ namespace MegabonkTogether.Scripts
             isGameStarted = false;
         }
 
+        private float sinceStatsChecked;
+        private int lastReportedStatSignature;
+
+        /// <summary>
+        /// Tells the host every permanent stat upgrade this player holds, whenever the set
+        /// changes. The host only holds a display mirror of a remote inventory and cannot read
+        /// these off it, so without this a checkpoint saved the host's upgrades and nobody
+        /// else's: everyone else came back at the right level with none of its power.
+        ///
+        /// Polled rather than hooked so a shrine, a level-up or anything else that grants a
+        /// stat is caught the same way, and sent only when something actually changed.
+        /// </summary>
+        private void ReportOwnStatsIfChanged()
+        {
+            sinceStatsChecked += Time.unscaledDeltaTime;
+            if (sinceStatsChecked < 1f) return;
+            sinceStatsChecked = 0f;
+
+            try
+            {
+                var permanent = GameManager.Instance?.player?.inventory?.statInventory?.permanentChanges;
+                if (permanent == null) return;
+
+                var stats = new System.Collections.Generic.List<Common.Persistence.SavedModifier>();
+                var signature = 17;
+                foreach (var entry in permanent)
+                {
+                    if (entry.Value == null) continue;
+                    foreach (var modifier in entry.Value)
+                    {
+                        if (modifier == null || !float.IsFinite(modifier.modification)) continue;
+                        stats.Add(new Common.Persistence.SavedModifier
+                        {
+                            Stat = (int)modifier.stat,
+                            Operation = (int)modifier.modifyType,
+                            Value = modifier.modification,
+                        });
+                        signature = signature * 31 + (int)modifier.stat;
+                        signature = signature * 31 + (int)modifier.modifyType;
+                        signature = signature * 31 + modifier.modification.GetHashCode();
+                    }
+                }
+
+                if (signature == lastReportedStatSignature) return;
+                lastReportedStatSignature = signature;
+
+                var mine = playerManagerService.GetLocalPlayer();
+                if (mine == null) return;
+
+                // The host reads its own inventory directly; only a client has to send.
+                if (isHost)
+                {
+                    mine.Stats = stats;
+                    return;
+                }
+
+                udpClientService.SendToHost(new PlayerStatsReported
+                {
+                    ConnectionId = mine.ConnectionId,
+                    Stats = stats,
+                }, LiteNetLib.DeliveryMethod.ReliableOrdered);
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not report stat upgrades to the host: {ex.Message}");
+            }
+        }
+
         private void OnGameStarted()
         {
             isGameStarted = true;
@@ -105,6 +174,8 @@ namespace MegabonkTogether.Scripts
 
                 if (SnapshotSchedule.Due(ref lobbyUpdateAccumulator, Time.unscaledDeltaTime, lobbyUpdatetickInterval))
                     udpClientService.Update();
+                ReportOwnStatsIfChanged();
+
                 if (isHost && isGameStarted)
                 {
                     // BonkLink edition, 2026-09-13: periodic co-op world checkpoints.

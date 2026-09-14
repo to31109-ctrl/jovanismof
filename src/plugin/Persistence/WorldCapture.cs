@@ -318,7 +318,7 @@ namespace MegabonkTogether.Persistence
             saved.Refreshes = Math.Max(0, saved.Refreshes);
             saved.Skips = Math.Max(0, saved.Skips);
 
-            CaptureStats(save, saved, inventory);
+            CaptureStats(save, saved, inventory, reported);
             CaptureWeapons(save, saved, inventory);
             CaptureTomes(save, saved, inventory);
             CaptureItems(save, saved, inventory);
@@ -330,8 +330,26 @@ namespace MegabonkTogether.Persistence
         /// these is level twenty with a level one body, which is what players saw as their
         /// stats being wiped.
         /// </summary>
-        private static void CaptureStats(WorldSave save, SavedPlayer saved, PlayerInventory inventory)
+        private static void CaptureStats(WorldSave save, SavedPlayer saved, PlayerInventory inventory, Common.Models.Player reported)
         {
+            // A remote player's inventory here is a display mirror and holds none of their
+            // upgrades, so what they reported themselves is the only real source.
+            if (reported != null)
+            {
+                if (reported.Stats == null || reported.Stats.Count == 0)
+                {
+                    save.MissingState.Add($"stat upgrades for {saved.Name}");
+                    return;
+                }
+
+                foreach (var modifier in reported.Stats)
+                {
+                    if (modifier == null || !float.IsFinite(modifier.Value)) continue;
+                    saved.Stats.Add(new SavedModifier { Stat = modifier.Stat, Operation = modifier.Operation, Value = modifier.Value });
+                }
+                return;
+            }
+
             try
             {
                 var permanent = inventory.statInventory?.permanentChanges;

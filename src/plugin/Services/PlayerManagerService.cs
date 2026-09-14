@@ -35,6 +35,9 @@ namespace MegabonkTogether.Services
 
         public NetPlayer GetRandomNetPlayer();
 
+        /// <summary>Host: remember the stat upgrades a player reported, so checkpoints keep them.</summary>
+        public void SetReportedStats(uint connectionId, List<Common.Persistence.SavedModifier> stats);
+
         /// <summary>A team-mate who is still up, for a player who has just gone down to watch.</summary>
         public NetPlayer GetLivingNetPlayer();
         public void AddProjectileToSpawn(uint connectionId);
@@ -304,6 +307,13 @@ namespace MegabonkTogether.Services
         public IEnumerable<NetPlayer> GetAllSpawnedNetPlayers()
         {
             return [.. spawnedPlayers.Values];
+        }
+
+        public void SetReportedStats(uint connectionId, List<Common.Persistence.SavedModifier> stats)
+        {
+            var player = GetPlayer(connectionId);
+            if (player == null) return;
+            player.Stats = stats ?? new List<Common.Persistence.SavedModifier>();
         }
 
         public NetPlayer GetLivingNetPlayer()

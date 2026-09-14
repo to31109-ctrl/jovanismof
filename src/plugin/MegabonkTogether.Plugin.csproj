@@ -9,7 +9,7 @@
     <Product>JOVANISMOF</Product>
     <BepInExPluginGuid>MegabonkTogether</BepInExPluginGuid>
     <BepInExPluginName>JOVANISMOF</BepInExPluginName>
-    <Version>5.2.4</Version>
+    <Version>5.2.5</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
     <RestoreAdditionalProjectSources>
@@ -135,6 +135,7 @@
 		<Exec Command="mkdir -p &quot;$(PluginPath)/MegabonkTogether&quot; &amp;&amp; cp -r &quot;$(TargetDir)&quot;* &quot;$(PluginPath)/MegabonkTogether/&quot;" Condition=" '$(PluginPath)' != '' And '$(Configuration)' == 'Debug' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' " />
 	</Target>
 </Project>
+
 
 
 

@@ -33,6 +33,9 @@ namespace MegabonkTogether.Common.Models
         public int Banishes = 0;
         public int Refreshes = 0;
         public int Skips = 0;
+        // BonkLink edition: every permanent stat upgrade this player holds. The host cannot read
+        // these off a remote player's mirrored inventory, so the player reports them instead.
+        public List<Persistence.SavedModifier> Stats { get; set; } = new();
 
     }
 }

@@ -1058,6 +1058,10 @@ namespace MegabonkTogether.Services
                         EventManager.OnGoldChanged(goldChanged);
                         SendToAllClientsExcept(netPeerId, goldChanged.OwnerId, goldChanged);
                         break;
+                    // Kept for checkpoints only, so there is nothing to pass on to anyone else.
+                    case PlayerStatsReported statsReported:
+                        playerManagerService.SetReportedStats(statsReported.ConnectionId, statsReported.Stats);
+                        break;
                     default:
                         Plugin.Log.LogWarning($"Unknown message type received {message}");
                         break;

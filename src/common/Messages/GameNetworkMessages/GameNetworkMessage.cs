@@ -75,6 +75,7 @@ namespace MegabonkTogether.Common.Messages
     [MemoryPackUnion(68, typeof(WorldRestore))]
     [MemoryPackUnion(69, typeof(ModUpdateOffer))]
     [MemoryPackUnion(70, typeof(ModUpdateChunk))]
+    [MemoryPackUnion(71, typeof(PlayerStatsReported))]
     public partial interface IGameNetworkMessage
     {
 
