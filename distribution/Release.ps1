@@ -40,7 +40,17 @@ if (!(Test-Path -LiteralPath $archive)) { throw "Expected the update archive at 
 # A fresh installer package too, so a brand new player also learns where updates come from.
 $packageDir = Join-Path $OutputRoot "release-$Version"
 if (Test-Path -LiteralPath $packageDir) { Remove-Item -LiteralPath $packageDir -Recurse -Force }
-& (Join-Path $PSScriptRoot 'Build-Package.ps1') -GamePath $GamePath -BepInExZip $BepInExZip -OutputDirectory $packageDir -UpdateRepository $UpdateRepository | Out-Null
+# The previous release's plugin, so the launcher test can prove a real update is applied
+# before the game starts. Missing on a first release, and that case is then skipped.
+$previousPlugin = Get-ChildItem -LiteralPath $OutputRoot -Directory -Filter 'release-*' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne "release-$Version" } |
+    Sort-Object Name -Descending |
+    ForEach-Object { Join-Path $_.FullName 'BonkLink-Playtest\payload\BepInEx\plugins\MegabonkTogether\MegabonkTogether.dll' } |
+    Where-Object { Test-Path -LiteralPath $_ } |
+    Select-Object -First 1
+if ($previousPlugin) { Write-Host "Launcher test will update from $previousPlugin" }
+
+& (Join-Path $PSScriptRoot 'Build-Package.ps1') -GamePath $GamePath -BepInExZip $BepInExZip -OutputDirectory $packageDir -UpdateRepository $UpdateRepository -OldPluginDll $previousPlugin | Out-Null
 
 $stage = Join-Path $packageDir 'BonkLink-Playtest'
 $root = (Resolve-Path $stage).Path

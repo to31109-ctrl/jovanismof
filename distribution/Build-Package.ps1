@@ -4,7 +4,10 @@ param(
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     # owner/repo that players should receive updates from. Leave empty to ship a package
     # that never updates itself.
-    [string]$UpdateRepository = ''
+    [string]$UpdateRepository = '',
+    # An older plugin for the launcher test to update from, proving a real release is
+    # downloaded and applied before the game starts. Optional; that case is skipped without it.
+    [string]$OldPluginDll = ''
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
@@ -88,7 +91,9 @@ No Megabonk game binaries or BonkWithFriends binaries/source are included.
 
     # The splash has to report the update and stay up until it finishes downloading.
     # Reading the script cannot show that, so this drives it against a stand-in game.
-    & (Join-Path $PSScriptRoot 'Test-Splash.ps1') -StageDirectory $stage
+    # Given an older plugin to start from, this also proves a real release is downloaded
+    # and applied before the game window ever appears.
+    & (Join-Path $PSScriptRoot 'Test-Splash.ps1') -StageDirectory $stage -OldPluginDll $OldPluginDll
 
     Write-Host "Staged at $stage. Add the verified VALIDATION.txt before creating the final ZIP."
 } finally { Pop-Location }
