@@ -170,6 +170,11 @@ namespace MegabonkTogether
             _ = Host.StartAsync(cancellationToken);
             var autoUpdaterService = Services.GetRequiredService<IAutoUpdaterService>();
 
+            // Players had no log file at all, because only the installer ever switched disk
+            // logging on and an update never runs the installer. Takes effect next launch,
+            // since BepInEx reads its config long before any plugin loads.
+            Configuration.LoggingRepair.EnsureDiskLogging();
+
             // Carries any change to the splash out to the launcher, which an update cannot
             // reach on its own. Takes effect on the launch after this one.
             MegabonkTogether.Services.LauncherFiles.Refresh(Log);

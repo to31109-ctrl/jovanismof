@@ -29,7 +29,23 @@ Check(!new LobbyScaling { SpawnsPerPlayer = float.NaN }.IsValid(), "invalid lobb
 // with the health scaling and with the pool the game allocates, and was asked to be removed.
 var defaults = new LobbyScaling();
 Check(defaults.SpawnsPerPlayer == 0f, "a party does not get extra mobs for having more players");
+// Without a log file nothing a player reports can be looked into from their own machine, and
+// only the installer ever switched this on -- which an update never runs.
+string Cfg(params string[] parts) => string.Join(Environment.NewLine, parts) + Environment.NewLine;
+var loggingOff = Cfg("[Logging.Disk]", "Enabled = false");
+var noDiskSection = Cfg("[Logging.Console]", "Enabled = false");
+var alreadyOn = Cfg("[Logging.Console]", "Enabled = false", "", "[Logging.Disk]", "Enabled = true");
+var consoleThenDisk = Cfg("[Logging.Console]", "Enabled = false", "", "[Logging.Disk]", "Enabled = false");
+Check(MegabonkTogether.Common.LoggingConfig.WithDiskLoggingOn(loggingOff).Contains("Enabled = true"), "disk logging is switched on when it was off");
+Check(MegabonkTogether.Common.LoggingConfig.WithDiskLoggingOn(noDiskSection).Contains("[Logging.Disk]"), "a missing disk logging section is added");
+Check(MegabonkTogether.Common.LoggingConfig.WithDiskLoggingOn(alreadyOn).Contains("[Logging.Disk]"), "an already correct file still has its disk section");
+Check(MegabonkTogether.Common.LoggingConfig.WithDiskLoggingOn(consoleThenDisk).Contains("[Logging.Console]"), "the console section is left alone");
 Check(LobbyScaling.Multiplier(5, defaults.SpawnsPerPlayer) == 1f, "five players face a single player's mob count");
+// Health is what scales with the party instead: two players, twice the health.
+Check(LobbyScaling.Multiplier(2, defaults.EnemyHealthPerPlayer) == 2f, "two players give enemies twice the health");
+Check(LobbyScaling.Multiplier(3, defaults.EnemyHealthPerPlayer) == 3f, "three players give enemies three times the health");
+Check(LobbyScaling.Multiplier(2, defaults.BossHealthPerPlayer) == 2f, "two players give a boss twice the health");
+Check(LobbyScaling.Multiplier(1, defaults.EnemyHealthPerPlayer) == 1f, "one player changes nothing");
 // The game reuses enemies from a fixed pool. Going past it makes it recycle enemies that are
 // still alive, which is enemies teleporting around the map and bosses with nothing to spawn
 // from. Nothing the host can set may exceed what the game actually allocated.

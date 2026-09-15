@@ -9,8 +9,8 @@ public partial class LobbyScaling
     // effective difficulty at two players and twenty-five times at five. These defaults keep
     // the curve closer to how party strength actually grows. Hosts can change all of it in
     // the scaling panel, and +100% across the board reproduces the old behaviour.
-    public float EnemyHealthPerPlayer { get; set; } = 0.35f;
-    public float BossHealthPerPlayer { get; set; } = 0.5f;
+    public float EnemyHealthPerPlayer { get; set; } = 1f;
+    public float BossHealthPerPlayer { get; set; } = 1f;
     /// <summary>
     /// Extra mobs per additional player. Zero: a party faces the same number a single player
     /// does. Adding mobs per player multiplied with the health scaling and with the enemy pool,
