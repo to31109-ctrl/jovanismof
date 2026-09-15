@@ -9,7 +9,7 @@
     <Product>JOVANISMOF</Product>
     <BepInExPluginGuid>MegabonkTogether</BepInExPluginGuid>
     <BepInExPluginName>JOVANISMOF</BepInExPluginName>
-    <Version>5.4.0</Version>
+    <Version>5.4.1</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
     <RestoreAdditionalProjectSources>

@@ -257,24 +257,57 @@ namespace MegabonkTogether.Scripts
 
                 if (GameManager.Instance == null || GameManager.Instance.player == null || GameManager.Instance.player.inventory == null) return;
 
+                // Each of these is run on its own. They used to be one block, and a single
+                // failure in the first of them -- the lobby broadcast -- meant none of the rest
+                // ran at all: remote players stopped moving, no enemies or projectiles reached
+                // anybody, checkpoints stopped being written and the level-up choice handling
+                // went with them. A fault in one part of a frame must cost that part only.
                 if (SnapshotSchedule.Due(ref lobbyUpdateAccumulator, Time.unscaledDeltaTime, lobbyUpdatetickInterval))
-                    udpClientService.Update();
-                ReportOwnStatsIfChanged();
-                RecoverFromAStuckChoice();
-                KeepChoiceOffTheKeyboard();
+                    Step("sending the lobby update", udpClientService.Update);
+                Step("reporting stat upgrades", ReportOwnStatsIfChanged);
+                Step("recovering from a stuck choice", RecoverFromAStuckChoice);
+                Step("keeping a choice off the keyboard", KeepChoiceOffTheKeyboard);
 
                 if (isHost && isGameStarted)
                 {
                     // BonkLink edition, 2026-09-13: periodic co-op world checkpoints.
-                    worldSaveService?.Tick(Time.unscaledDeltaTime);
-                    if (SnapshotSchedule.Due(ref enemyUpdateAccumulator, Time.deltaTime, enemyUpdatetickInterval)) udpClientService.UpdateEnemies();
-                    if (SnapshotSchedule.Due(ref projectileUpdateAccumulator, Time.deltaTime, projectileUpdatetickInterval)) udpClientService.UpdateProjectiles();
-                    if (MapController.runConfig.mapData.eMap == EMap.Desert && SnapshotSchedule.Due(ref tumbleWeedUpdateAccumulator, Time.deltaTime, tumbleWeedUpdatetickInterval)) udpClientService.UpdateTumbleWeeds();
+                    Step("saving a checkpoint", () => worldSaveService?.Tick(Time.unscaledDeltaTime));
+                    if (SnapshotSchedule.Due(ref enemyUpdateAccumulator, Time.deltaTime, enemyUpdatetickInterval))
+                        Step("sending enemies", udpClientService.UpdateEnemies);
+                    if (SnapshotSchedule.Due(ref projectileUpdateAccumulator, Time.deltaTime, projectileUpdatetickInterval))
+                        Step("sending projectiles", udpClientService.UpdateProjectiles);
+                    if (MapController.runConfig.mapData.eMap == EMap.Desert && SnapshotSchedule.Due(ref tumbleWeedUpdateAccumulator, Time.deltaTime, tumbleWeedUpdatetickInterval))
+                        Step("sending tumbleweeds", udpClientService.UpdateTumbleWeeds);
                 }
             }
             catch (System.Exception ex)
             {
                 Plugin.Log.LogError($"NetworkHandler Update error: {ex}");
+            }
+        }
+
+        private readonly System.Collections.Generic.HashSet<string> reportedFaults = new();
+
+        /// <summary>
+        /// Runs one part of the frame, so that a fault in it cannot stop the parts after it.
+        ///
+        /// A repeat is counted rather than written out again: the fault this was built for threw
+        /// on every frame and filled a fifteen megabyte log with thirteen thousand copies of the
+        /// same stack, which buries everything else a player might need to report.
+        /// </summary>
+        private void Step(string what, System.Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (System.Exception ex)
+            {
+                var fault = $"{what}: {ex.GetType().Name}: {ex.Message}";
+                if (reportedFaults.Add(fault))
+                {
+                    Plugin.Log.LogError($"Co-op kept going after a fault while {what}. This is a bug, please report it. " + ex);
+                }
             }
         }
 

@@ -7,7 +7,6 @@ Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
 here = fso.GetParentFolderName(WScript.ScriptFullName)
-splash = fso.BuildPath(here, "Splash.ps1")
 
 ' The installer writes the game folder next to this script.
 If fso.FileExists(fso.BuildPath(here, "gamepath.txt")) Then
@@ -24,6 +23,13 @@ If Not fso.FileExists(fso.BuildPath(gameDir, "Megabonk.exe")) Then
            "Run Install.cmd again to repair the installation.", 16, "JOVANISMOF"
     WScript.Quit 1
 End If
+
+' The splash belonging to the installation being launched wins over one sitting next to
+' this script. The mod keeps the former up to date through an update; a copy left beside an
+' older shortcut goes stale, and a stale splash is one that never learned to update anything.
+' That is how a player ended up several versions behind while their launcher looked fine.
+splash = fso.BuildPath(gameDir, "Splash.ps1")
+If Not fso.FileExists(splash) Then splash = fso.BuildPath(here, "Splash.ps1")
 
 If fso.FileExists(splash) Then
     command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & _

@@ -1,4 +1,6 @@
 // BonkLink edition, 2026-09-13. GPL-2.0; see LICENSE.
+using MemoryPack;
+
 namespace MegabonkTogether.Common.Persistence;
 
 /// <summary>
@@ -138,7 +140,17 @@ public sealed class SavedModifierSet
     public List<SavedModifier> Modifiers { get; set; } = new();
 }
 
-public sealed class SavedModifier
+/// <summary>
+/// One permanent stat change.
+///
+/// This is a save-file type that is also sent over the wire: a player reports the upgrades they
+/// hold so the host can checkpoint them, and the host passes them on in the lobby. That means it
+/// needs MemoryPack as well as JSON. Without it the host's lobby broadcast threw on every single
+/// frame, which took the rest of the host's send loop down with it -- no player positions, no
+/// enemies, no projectiles, no checkpoints and no choice handling reached anybody.
+/// </summary>
+[MemoryPackable]
+public sealed partial class SavedModifier
 {
     public int Stat { get; set; }
     public int Operation { get; set; }

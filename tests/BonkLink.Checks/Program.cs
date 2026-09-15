@@ -442,6 +442,81 @@ if(args.Contains("--public-relay"))
     }
 }
 
+// --- Everything that crosses the wire must actually be able to cross it. ---------------------
+// A message type compiles happily with a member whose type nothing can serialize; it only fails
+// when it is sent, and then it fails on every frame. That is what happened: one such member on
+// the player model made the host's lobby broadcast throw continuously, and because that call sits
+// in the middle of the host's update everything after it stopped running too -- remote player
+// positions, enemy spawning, projectiles, checkpoints and the level-up choice handling all went
+// with it. Clients saw everybody standing still at spawn on an empty map. So this walks every
+// serializable type and proves its members are serializable too, before anything ships.
+{
+    var assembly = typeof(MegabonkTogether.Common.Messages.LobbyUpdates).Assembly;
+    bool IsPackable(Type t) => t.GetCustomAttributes(typeof(MemoryPackableAttribute), false).Length > 0;
+
+    IEnumerable<Type> Carried(Type t)
+    {
+        if (t.IsByRef || t.IsPointer) yield break;
+        if (t.IsArray) { var e = t.GetElementType(); if (e != null) foreach (var c in Carried(e)) yield return c; yield break; }
+        if (t.IsGenericType) { foreach (var a in t.GetGenericArguments()) foreach (var c in Carried(a)) yield return c; yield break; }
+        yield return t;
+    }
+
+    var unserializable = new List<string>();
+    foreach (var owner in assembly.GetTypes().Where(IsPackable))
+    {
+        var members = owner.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .Select(f => (f.Name, Type: f.FieldType))
+            .Concat(owner.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                .Where(p => p.CanRead && p.CanWrite)
+                .Select(p => (p.Name, Type: p.PropertyType)));
+
+        foreach (var (name, type) in members)
+            foreach (var carried in Carried(type))
+            {
+                // Only types this mod defines can be got wrong here; the framework's own and
+                // Unity's are handled by MemoryPack itself.
+                if (carried.Assembly != assembly) continue;
+                if (carried.IsEnum || carried.IsInterface) continue;
+                if (IsPackable(carried)) continue;
+                unserializable.Add($"{owner.Name}.{name} carries {carried.Name}, which is not [MemoryPackable]");
+            }
+    }
+    Check(unserializable.Count == 0, unserializable.Count == 0
+        ? "every type sent over the wire can be serialized"
+        : "UNSERIALIZABLE: " + string.Join("; ", unserializable));
+}
+
+// The exact message that was failing, with the exact member that broke it, actually sent and read
+// back. The walk above is the general rule; this is the case that cost a day.
+{
+    var lobby = new MegabonkTogether.Common.Messages.LobbyUpdates
+    {
+        Players = new List<MegabonkTogether.Common.Models.Player>
+        {
+            new()
+            {
+                ConnectionId = 7,
+                Name = "player",
+                Stats = new List<SavedModifier> { new() { Stat = 3, Operation = 1, Value = 1.5f } },
+            },
+        },
+    };
+    var bytes = MemoryPackSerializer.Serialize(lobby);
+    var readBack = MemoryPackSerializer.Deserialize<MegabonkTogether.Common.Messages.LobbyUpdates>(bytes);
+    var stats = readBack!.Players.Single().Stats;
+    Check(stats.Count == 1 && stats[0].Stat == 3 && stats[0].Value == 1.5f,
+        "a lobby broadcast carrying a player's stat upgrades survives a round trip");
+
+    var reported = MemoryPackSerializer.Deserialize<MegabonkTogether.Common.Messages.GameNetworkMessages.PlayerStatsReported>(
+        MemoryPackSerializer.Serialize(new MegabonkTogether.Common.Messages.GameNetworkMessages.PlayerStatsReported
+        {
+            ConnectionId = 7,
+            Stats = new List<SavedModifier> { new() { Stat = 2, Operation = 0, Value = 4f } },
+        }));
+    Check(reported!.Stats.Single().Value == 4f, "a player reporting their stat upgrades survives a round trip");
+}
+
 Console.WriteLine($"{passed} checks passed");
 
 sealed class FakeSocket(byte[] bytes,int fragment,WebSocketMessageType type=WebSocketMessageType.Binary):WebSocket

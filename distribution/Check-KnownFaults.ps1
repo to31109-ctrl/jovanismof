@@ -131,6 +131,38 @@ foreach ($file in $source) {
     }
 }
 
+# 8. Nothing may take the player's controls away because an update exists. A release published
+#    while somebody was playing left them able to walk but unable to jump, interact, or open the
+#    pause menu -- so they could not even quit to apply the update they were being punished for
+#    not having. The launcher updates before the game starts; in-game this is only ever harm.
+foreach ($file in $source) {
+    $text = Get-Content -LiteralPath $file.FullName
+    for ($i = 0; $i -lt $text.Count; $i++) {
+        if ($text[$i] -match '^\s*//') { continue }
+        if ($text[$i] -notmatch 'IsAnUpdateAvailable\s*\(') { continue }
+        # Looking within the method for a swallowed input result.
+        for ($j = $i; $j -lt [Math]::Min($text.Count, $i + 12); $j++) {
+            if ($text[$j] -match '__result\s*=\s*false') {
+                $faults += "$($file.Name):$($i + 1) refuses the player's input because an update is available. That leaves them unable to jump, interact or open the pause menu."
+                break
+            }
+        }
+    }
+}
+
+# 9. Every step of the networking frame must be run on its own. They were once a single block,
+#    and one failing call -- the host's lobby broadcast -- stopped everything after it: remote
+#    players froze at spawn, no enemies or projectiles were sent, no checkpoints were written.
+$handler = Join-Path $repo 'src/plugin/Scripts/NetworkHandler.cs'
+if (Test-Path -LiteralPath $handler) {
+    $handlerText = Get-Content -Raw -LiteralPath $handler
+    foreach ($step in @('udpClientService.Update', 'udpClientService.UpdateEnemies', 'udpClientService.UpdateProjectiles', 'RecoverFromAStuckChoice')) {
+        if ($handlerText -notmatch ('Step\("[^"]+",\s*' + [regex]::Escape($step))) {
+            $faults += "NetworkHandler.cs calls $step outside Step(), so a fault in it stops every part of the frame that follows."
+        }
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red

@@ -22,6 +22,12 @@ try {
     # Do not test $LASTEXITCODE: calling a .ps1 does not set it, so a stale value from an
     # earlier native command would fail a perfectly good build.
     & (Join-Path $PSScriptRoot 'Check-KnownFaults.ps1')
+    # The headless checks, which among other things prove that every type sent between players
+    # can actually be serialized. One that could not was shipped, and because the failure was a
+    # runtime one it took the host's whole send loop down on every frame: players stood still at
+    # spawn on an empty map. A build must never get past this again.
+    dotnet run --project tests/BonkLink.Checks/BonkLink.Checks.csproj -c Release -v q --nologo
+    if ($LASTEXITCODE -ne 0) { throw 'Headless checks failed.' }
     dotnet build src/plugin/MegabonkTogether.Plugin.csproj -c Release -p:CI=true -p:DefineConstants=TRACE "-p:MegabonkPath=$GamePath" --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
     $stage = Join-Path $OutputDirectory 'BonkLink-Playtest'
