@@ -71,6 +71,37 @@ namespace MegabonkTogether.Scripts
             isGameStarted = false;
         }
 
+        /// <summary>
+        /// Stops the space bar taking a level-up choice for you.
+        ///
+        /// Unity treats space and enter as "submit" on whichever UI element is currently
+        /// selected, so a tap of space pressed the skip button and the choice was gone. Nothing
+        /// is selected while a choice is up, so there is nothing for submit to press; the mouse
+        /// is unaffected.
+        /// </summary>
+        private void KeepChoiceOffTheKeyboard()
+        {
+            try
+            {
+                if (!synchronizationService.HasNetplaySessionStarted()) return;
+
+                var windows = UiManager.Instance?.encounterWindows;
+                var choiceOnScreen = windows != null && windows.activeEncounterWindow != null
+                    && windows.activeEncounterWindow.gameObject.activeInHierarchy;
+                if (!choiceOnScreen) return;
+
+                var events = UnityEngine.EventSystems.EventSystem.current;
+                if (events != null && events.currentSelectedGameObject != null)
+                {
+                    events.SetSelectedGameObject(null);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not keep the choice off the keyboard: {ex.Message}");
+            }
+        }
+
         private float stuckForSeconds;
 
         /// <summary>
@@ -230,6 +261,7 @@ namespace MegabonkTogether.Scripts
                     udpClientService.Update();
                 ReportOwnStatsIfChanged();
                 RecoverFromAStuckChoice();
+                KeepChoiceOffTheKeyboard();
 
                 if (isHost && isGameStarted)
                 {

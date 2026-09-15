@@ -93,14 +93,17 @@ namespace MegabonkTogether.Scripts.Snapshot
                 return;
             }
 
-            if (hoverAnimations != null)
-            {
-                hoverAnimations.defaultPos = Vector3.Lerp(older.Position, newer.Position, t);
-            }
-            else
-            {
-                modelTransform.position = Vector3.Lerp(older.Position, newer.Position, t);
-            }
+            var position = Vector3.Lerp(older.Position, newer.Position, t);
+
+            // The model is moved either way. A hovering character (Tony McZoom) took only the
+            // first branch, which sets the height its hover bobs around and never touches the
+            // transform: if the hover component was not driving the model, it simply stayed
+            // wherever it had last been left -- parked far under the map while hidden or dead.
+            // To everyone else that player was invisible and their map marker, which hangs off
+            // the same model, pointed at the parked spot, while their weapons and projectiles
+            // carried on appearing where they really were.
+            if (hoverAnimations != null) hoverAnimations.defaultPos = position;
+            modelTransform.position = position;
 
             if (newer.Rotation != Quaternion.identity)
             {
