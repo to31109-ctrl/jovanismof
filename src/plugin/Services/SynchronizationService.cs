@@ -1260,6 +1260,49 @@ namespace MegabonkTogether.Services
             udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableUnordered);
         }
 
+        private static int pooledProjectiles;
+        private static int unpooledProjectiles;
+
+        /// <summary>
+        /// A projectile for another player's shot, taken from the game's own pool.
+        ///
+        /// These used to be built with Instantiate, so every shot from every other player was a
+        /// brand new object -- and when it finished, the game tried to put it back into a pool
+        /// bucket that had never been created for that weapon and threw. Fixed in 5.6.1 by
+        /// destroying the orphan, which stopped the throw but kept the churn: one object built and
+        /// one destroyed for every projectile from every other player, all on the main thread,
+        /// with the garbage collector paying for it. That cost grows with the number of players
+        /// and with how much they fire, which is exactly what was reported -- "the more players,
+        /// the less FPS", and "the more attacks, the worse it gets".
+        ///
+        /// The game's own pool creates the bucket the first time a weapon is seen, so returning
+        /// works too, and from then on the same objects are reused the way local shots are.
+        /// Instantiate is kept only as a fallback for a weapon the pool refuses.
+        /// </summary>
+        private static GameObject TakeProjectileFromPool(WeaponAttack attack)
+        {
+            try
+            {
+                var pooled = Assets.Scripts.Objects.Pooling.PoolManager.Instance?.GetProjectile(attack);
+                if (pooled != null)
+                {
+                    pooledProjectiles++;
+                    if (pooledProjectiles == 1) Plugin.Log.LogInfo("Other players' projectiles are now coming from the game's pool rather than being built and destroyed one at a time.");
+                    return pooled.gameObject;
+                }
+            }
+            catch (Exception ex)
+            {
+                unpooledProjectiles++;
+                if (unpooledProjectiles == 1 || unpooledProjectiles % 200 == 0)
+                {
+                    Plugin.Log.LogWarning($"The game's pool would not supply a projectile for {attack?.weaponBase?.weaponData?.name ?? "a weapon"} ({ex.Message}); building one instead ({unpooledProjectiles} so far).");
+                }
+            }
+
+            return GameObject.Instantiate(attack.prefabProjectile);
+        }
+
         private void OnReceivedSpawnedProjectile(AbstractSpawnedProjectile projectile)
         {
             try
@@ -1275,7 +1318,7 @@ namespace MegabonkTogether.Services
                 {
                     var attack = weapon.weaponData.attack.GetComponent<WeaponAttack>();
                     attack.weaponBase = weapon;
-                    var proj = GameObject.Instantiate(attack.prefabProjectile);
+                    var proj = TakeProjectileFromPool(attack);
 
                     PoolHelper.EnsureWeaponPoolExists(eweapon);
 

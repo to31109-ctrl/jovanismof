@@ -388,6 +388,21 @@ if (Test-Path -LiteralPath $scalingFile) {
     }
 }
 
+# 26. Another player's projectile must come from the game's pool, not from Instantiate. Built
+#     fresh, every shot from every other player was one object created and one destroyed on the
+#     main thread, and that cost grew with the number of players and how much they fired --
+#     "the more players, the less FPS" and "the more attacks, the worse it gets".
+$syncFile = Join-Path $repo 'src/plugin/Services/SynchronizationService.cs'
+if (Test-Path -LiteralPath $syncFile) {
+    $syncCode = (Get-Content -LiteralPath $syncFile | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    if ($syncCode -match 'var proj = GameObject\.Instantiate\(attack\.prefabProjectile\)') {
+        $faults += 'SynchronizationService.cs builds other players'' projectiles with Instantiate again instead of taking them from the pool, which costs a frame budget that grows with every player firing.'
+    }
+    if ($syncCode -notmatch 'TakeProjectileFromPool\(attack\)') {
+        $faults += 'SynchronizationService.cs no longer takes other players'' projectiles from the game''s pool.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red
