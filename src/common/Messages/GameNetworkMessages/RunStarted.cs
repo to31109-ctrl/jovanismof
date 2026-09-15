@@ -16,5 +16,12 @@ namespace MegabonkTogether.Common.Messages
         /// </summary>
         public int Seed { get; set; }
         public Models.LobbyScaling Scaling { get; set; } = new();
+        /// <summary>
+        /// BonkLink edition: whether the host is running shared experience. Each peer used to
+        /// answer this from whatever it happened to know locally, and a peer that did not know
+        /// answered "no" -- so it never froze for a level-up choice and walked around while
+        /// everybody else stood still.
+        /// </summary>
+        public bool SharedExperience { get; set; }
     }
 }

@@ -3815,6 +3815,7 @@ namespace MegabonkTogether.Services
                 ChallengeName = runConfig.challenge?.name ?? "",
                 Seed = playerManagerService.GetSeed(),
                 Scaling = Plugin.Instance.Mode.Scaling,
+                SharedExperience = Configuration.ModConfig.EnabledSharedExperience.Value,
             };
 
             var isHost = IsServerMode() ?? false;
@@ -3825,6 +3826,10 @@ namespace MegabonkTogether.Services
         }
         private void OnReceivedRunStarted(RunStarted started)
         {
+            // Settled before anything can pause, so no peer has to guess and end up the only
+            // one still moving.
+            Plugin.Instance.Mode.EnabledSharedExperience = started.SharedExperience;
+
             if (started.Scaling == null || !started.Scaling.IsValid())
             {
                 logger.LogError("Host sent invalid lobby scaling; refusing to start the run");
@@ -4426,13 +4431,16 @@ namespace MegabonkTogether.Services
 
         public bool IsSharedExperienceEnabled()
         {
-            var sharedExperienceEnabled = Plugin.Instance.Mode.EnabledSharedExperience;
-            if (sharedExperienceEnabled.HasValue)
-            {
-                return sharedExperienceEnabled.Value;
-            }
+            // The host decides this for the whole lobby, and its own setting is the source.
+            if (IsServerMode() == true) return Configuration.ModConfig.EnabledSharedExperience.Value;
 
-            return false;
+            var sharedExperienceEnabled = Plugin.Instance.Mode.EnabledSharedExperience;
+            if (sharedExperienceEnabled.HasValue) return sharedExperienceEnabled.Value;
+
+            // Not heard from the host yet. Answering "no" here is what let a player keep moving
+            // while the rest of the party was frozen waiting on a choice, so the safer answer is
+            // to behave like everyone else until the host says otherwise.
+            return Configuration.ModConfig.EnabledSharedExperience.Value;
         }
 
         public void PlayerXpAddXp(int xp, int amount, float leftOverXp)
@@ -4476,6 +4484,17 @@ namespace MegabonkTogether.Services
         {
             try
             {
+                // Settings is its own window opened from the pause screen, so closing pause
+                // alone left it on screen over a frozen world with no way back out of it.
+                // Settings is its own window opened from the pause screen, so closing pause
+                // alone left it on screen over a frozen world with no way back out of it.
+                if (WindowManager.HasOpenWindow())
+                {
+                    logger.LogInfo($"Closing {WindowManager.GetNumOpenWindows()} open window(s) so this player can take part in the shared reward.");
+                    try { WindowManager.CloseAll(); }
+                    catch (Exception ex) { logger.LogWarning($"Could not close the open window: {ex.Message}"); }
+                }
+
                 var pause = UiManager.Instance?.pause;
                 if (pause != null && pause.gameObject.activeInHierarchy)
                 {

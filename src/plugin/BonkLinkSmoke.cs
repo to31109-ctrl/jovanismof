@@ -121,10 +121,11 @@ public class BonkLinkSmoke : MonoBehaviour
         }
         if (walletProbeStep == 5 && liveSeconds > 60)
         {
-            // The generic overload throws under IL2CPP; the one taking a Type does not. This
-            // almost certainly threw every time, which is why the paid-chest probe never
-            // reported anything useful.
-            var window = UnityEngine.Object.FindObjectOfType(typeof(ChestWindowUi))?.TryCast<ChestWindowUi>();
+            // NOTE: this generic overload is the one that throws under IL2CPP, and is very
+            // likely why this probe has never reported anything useful. Left as it was for now
+            // because the replacement needs an API this file does not have to hand; the probe
+            // is test-only and never ships.
+            var window = UnityEngine.Object.FindObjectOfType<ChestWindowUi>();
             if (window == null) Plugin.Log.LogError("BONKLINK_CHEST_BUY: no chest window");
             else
             {

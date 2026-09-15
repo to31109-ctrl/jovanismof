@@ -88,6 +88,29 @@ namespace MegabonkTogether.Patches
         }
 
         /// <summary>
+        /// Clears menus that would sit over a level-up choice. Opened before the freeze, they
+        /// stay on screen after it and the player can neither use them nor reach the choice.
+        /// </summary>
+        internal static void CloseScreensBlockingAChoice()
+        {
+            try
+            {
+                if (WindowManager.HasOpenWindow())
+                {
+                    Plugin.Log.LogInfo($"Closing {WindowManager.GetNumOpenWindows()} open window(s) so this player can make their choice.");
+                    WindowManager.CloseAll();
+                }
+
+                var pause = UiManager.Instance?.pause;
+                if (pause != null && pause.gameObject.activeInHierarchy) pause.Resume();
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not clear the screens covering a choice: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Prevent pause on netplay reward pop (Shady guy and other) on non shared experience
         /// </summary>
         [HarmonyPostfix]
@@ -101,6 +124,11 @@ namespace MegabonkTogether.Patches
 
             if (synchronizationService.IsSharedExperienceEnabled())
             {
+                // A choice window is going up over a world that is about to freeze. Anything
+                // the player already had open -- settings, most often -- stays on top of it and
+                // cannot be dismissed once time stops, which strands them and leaves the rest
+                // of the party waiting on a choice they are unable to reach.
+                CloseScreensBlockingAChoice();
                 UiManager.Instance.encounterWindows?.activeEncounterWindow?.gameObject.SetActive(true);
                 return;
             }

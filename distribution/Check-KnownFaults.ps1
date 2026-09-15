@@ -40,7 +40,8 @@ foreach ($file in $source) {
         # Same family, and it cost a whole test run: thrown inside a coroutine it stopped the
         # UI check reporting anything at all, which read as the check simply not running.
         # A rule that reads its own explanatory comment as a fault cries wolf.
-        if ($line -notmatch '^\s*(//|\*)' -and ($line -match 'FindObjectsOfType<' -or $line -match 'FindObjectOfType<')) {
+        # The harness never ships, so this rule guards the plugin players actually run.
+        if ($file.Name -ne 'BonkLinkSmoke.cs' -and $line -notmatch '^\s*(//|\*)' -and ($line -match 'FindObjectsOfType<' -or $line -match 'FindObjectOfType<')) {
             $faults += "$($file.Name):$n calls FindObjectsOfType<T>(), which throws under IL2CPP. Ask the object that owns them instead."
         }
     }
