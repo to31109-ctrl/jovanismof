@@ -346,6 +346,18 @@ if(args.Contains("--public-relay"))
         Refuses(() => WorldSaveStore.Validate(Broken(MakeWorld(20), w => w.Schema = WorldSaveStore.Schema + 1)), "rejects a checkpoint from a newer version");
         Refuses(() => WorldSaveStore.Validate(Broken(MakeWorld(17), w => w.Players[0].Stats = null!)), "rejects a checkpoint with no stat upgrade list");
 
+        // Coming back after closing the game. The slot is found by installation identity, and the
+        // character a client reports on rejoin is not always the one they played -- reading that as
+        // "never played here" handed them a blank character and lost everything they had.
+        var rejoinWorld = MakeWorld(21);
+        var returning = rejoinWorld.Players[1];
+        returning.Character = 3;
+        returning.Level = 37;
+        Check(rejoinWorld.FindPlayer(returning.Identity, 3) != null, "a returning player is found on the character they played");
+        Check(rejoinWorld.FindPlayer(returning.Identity, 99) == null, "a character they never played is not mistaken for theirs");
+        Check(rejoinWorld.FindMostRecent(returning.Identity)?.Level == 37, "their most recent character is still found when the reported one does not match");
+        Check(rejoinWorld.FindMostRecent("someone-who-never-played") == null, "a genuine newcomer is not handed somebody else's character");
+
         var second = MakeWorld(2);
         second.Players[0].Gold = 4321;
         reopened.Write(second);

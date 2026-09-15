@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Inventory__Items__Pickups;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Assets.Scripts.Inventory__Items__Pickups;
 using Assets.Scripts.Inventory__Items__Pickups.AbilitiesPassive.Implementations;
 using Assets.Scripts.Inventory__Items__Pickups.Items.ItemImplementations;
 using Assets.Scripts.Inventory__Items__Pickups.Weapons;
@@ -537,6 +538,10 @@ namespace MegabonkTogether.Services
 
         public void Disconnect(uint connectionId)
         {
+            // Told before the player is forgotten, or there is nothing left to write down.
+            try { Plugin.Services.GetService<IWorldSaveService>()?.OnPlayerLeft(connectionId); }
+            catch (Exception ex) { logger.LogWarning($"Could not checkpoint a leaving player: {ex.Message}"); }
+
             RemovePlayer(connectionId);
 
             var inventory = GetPlayerInventory(connectionId);

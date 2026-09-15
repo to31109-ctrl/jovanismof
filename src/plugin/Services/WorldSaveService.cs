@@ -45,6 +45,12 @@ namespace MegabonkTogether.Services
         /// <summary>Host: a client reported itself in-game; return its checkpointed slot if we hold one.</summary>
         void OnClientReady(uint connectionId, string identity);
 
+        /// <summary>
+        /// Host: a player has left. Their final state is written down now, rather than waiting
+        /// for the next automatic checkpoint, so nothing they did is lost if they come back.
+        /// </summary>
+        void OnPlayerLeft(uint connectionId);
+
         /// <summary>Any peer: apply the state the host sent us.</summary>
         void OnReceivedRestore(WorldRestore restore);
 
@@ -544,6 +550,40 @@ namespace MegabonkTogether.Services
             return false;
         }
 
+        public void OnPlayerLeft(uint connectionId)
+        {
+            if (!Enabled || !IsHost || !sessionLive) return;
+
+            // Their inventory is already gone by the time most of the game hears about this, so
+            // the checkpoint is taken immediately; anything later would remember them as they
+            // were up to a minute ago, or not at all.
+            SaveNow("player left");
+
+            // Letting them be restored again if they come back. The slot is matched by identity,
+            // so the connection id they return on does not matter.
+            restoredThisSession.Remove(connectionId);
+
+            // The checkpoint just taken already marks them absent, but the copy held in memory
+            // is what a rejoin is answered from, so it is corrected too.
+            try
+            {
+                var leaving = players.GetPlayer(connectionId);
+                var identity = leaving?.Identity;
+                if (!string.IsNullOrEmpty(identity) && lastCheckpoint != null)
+                {
+                    foreach (var slot in lastCheckpoint.Players)
+                    {
+                        if (slot?.Identity != identity) continue;
+                        slot.Connected = false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Could not mark a leaving player absent: {ex.Message}");
+            }
+        }
+
         public void OnClientReady(uint connectionId, string identity)
         {
             if (!Enabled || !IsHost || !sessionLive) return;
@@ -556,6 +596,19 @@ namespace MegabonkTogether.Services
             var source = lastCheckpoint;
             var character = (int)(players.GetPlayer(connectionId)?.Character ?? 0);
             var slot = source?.FindPlayer(identity, character);
+
+            // The character a client is on is not always known the instant they report ready,
+            // and reading that as "never played here" hands a returning player a blank
+            // character and loses everything they had.
+            if (slot == null && source != null)
+            {
+                slot = source.FindMostRecent(identity);
+                if (slot != null)
+                {
+                    logger.LogInfo($"Player {connectionId} reported character {character}, which is not one they have played here; giving back their most recent one ({(ECharacter)slot.Character}).");
+                }
+            }
+
             if (slot == null)
             {
                 logger.LogInfo($"Player {connectionId} has not played this world before; they start fresh");

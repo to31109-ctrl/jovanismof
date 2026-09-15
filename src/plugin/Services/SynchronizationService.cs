@@ -4488,12 +4488,10 @@ namespace MegabonkTogether.Services
                 // alone left it on screen over a frozen world with no way back out of it.
                 // Settings is its own window opened from the pause screen, so closing pause
                 // alone left it on screen over a frozen world with no way back out of it.
-                if (WindowManager.HasOpenWindow())
-                {
-                    logger.LogInfo($"Closing {WindowManager.GetNumOpenWindows()} open window(s) so this player can take part in the shared reward.");
-                    try { WindowManager.CloseAll(); }
-                    catch (Exception ex) { logger.LogWarning($"Could not close the open window: {ex.Message}"); }
-                }
+                // Routed through the shared helper, which refuses to do this while a choice is
+                // already on screen -- closing everything then takes the choice with it and
+                // leaves the player frozen in front of nothing.
+                Patches.EncounterWindowPatches.CloseScreensBlockingAChoice();
 
                 var pause = UiManager.Instance?.pause;
                 if (pause != null && pause.gameObject.activeInHierarchy)

@@ -36,6 +36,11 @@ namespace MegabonkTogether.Patches
                 return false;
             }
 
+            // Cleared here, before the choice window is built. Doing it afterwards closed the
+            // choice window along with everything else, which left the world frozen with
+            // nothing on screen to pick.
+            if (synchronizationService.IsSharedExperienceEnabled()) CloseScreensBlockingAChoice();
+
             if (GameManager.Instance.player.IsDead())
             {
                 if (synchronizationService.IsSharedExperienceEnabled())
@@ -95,6 +100,15 @@ namespace MegabonkTogether.Patches
         {
             try
             {
+                // Never while a choice is on screen: CloseAll would take that window with it and
+                // leave the player frozen in front of nothing.
+                var encounter = UiManager.Instance?.encounterWindows?.activeEncounterWindow;
+                if (encounter != null && encounter.gameObject.activeInHierarchy)
+                {
+                    Plugin.Log.LogInfo("A choice is already on screen; leaving the windows alone.");
+                    return;
+                }
+
                 if (WindowManager.HasOpenWindow())
                 {
                     Plugin.Log.LogInfo($"Closing {WindowManager.GetNumOpenWindows()} open window(s) so this player can make their choice.");
@@ -128,7 +142,6 @@ namespace MegabonkTogether.Patches
                 // the player already had open -- settings, most often -- stays on top of it and
                 // cannot be dismissed once time stops, which strands them and leaves the rest
                 // of the party waiting on a choice they are unable to reach.
-                CloseScreensBlockingAChoice();
                 UiManager.Instance.encounterWindows?.activeEncounterWindow?.gameObject.SetActive(true);
                 return;
             }
