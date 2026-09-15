@@ -750,6 +750,20 @@ namespace MegabonkTogether.Services
                     case GoldChanged goldChanged:
                         EventManager.OnGoldChanged(goldChanged);
                         break;
+                    // Every player's readiness is reset when a portal is taken, and a client
+                    // was only ever told about its own. It therefore never saw the lobby become
+                    // ready again and waited on "Waiting for other players" for ever, while the
+                    // host -- which does see everyone -- carried on into the next area.
+                    case ClientInGameReady readyElsewhere:
+                        var readyPlayer = playerManagerService.GetPlayer(readyElsewhere.ConnectionId);
+                        if (readyPlayer != null)
+                        {
+                            readyPlayer.IsReady = true;
+                            if (!string.IsNullOrEmpty(readyElsewhere.Identity)) readyPlayer.Identity = readyElsewhere.Identity;
+                            playerManagerService.UpdatePlayer(readyPlayer);
+                            Plugin.Log.LogInfo($"Player {readyElsewhere.ConnectionId} is ready.");
+                        }
+                        break;
                     default:
                         Plugin.Log.LogWarning($"Unknown message type received. message={message}");
                         break;
@@ -835,6 +849,9 @@ namespace MegabonkTogether.Services
                         playerManagerService.UpdatePlayer(player);
 
                         Plugin.Log.LogInfo($"Player {clientReadyId} is ready.");
+
+                        // Passed on, or the other clients never learn this player is ready.
+                        SendToAllClientsExcept(netPeerId, clientReadyId, clientInGameReady);
 
                         try
                         {

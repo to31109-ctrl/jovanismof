@@ -671,6 +671,19 @@ namespace MegabonkTogether.Services
                     player.IsReady = true;
                     playerManagerService.UpdatePlayer(player);
 
+                    // The host's own readiness was known only to the host. A client waiting for
+                    // the whole lobby therefore never saw it, and sat on "Waiting for other
+                    // players" from the second area onwards.
+                    if (isServer)
+                    {
+                        IGameNetworkMessage hostReady = new ClientInGameReady
+                        {
+                            ConnectionId = player.ConnectionId,
+                            Identity = Configuration.ModConfig.PlayerIdentity.Value ?? "",
+                        };
+                        udpClientService.SendToAllClients(hostReady, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                    }
+
                     if (!isServer)
                     {
                         HandleGameEvent(gameEvent);
