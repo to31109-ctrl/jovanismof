@@ -946,7 +946,10 @@ namespace MegabonkTogether.Services
 
             if (enemy == null)
             {
-                logger.LogWarning($"Failed to spawn enemy: {(EEnemy)spawnedEnemy.Name} at position: {spawnedEnemy.Position.ToUnityVector3()}");
+                // SpawnEnemy returns nothing when the game's enemy pool is full. Rare, and
+                // worth keeping loud: it means a mob the other players can see never
+                // appeared here, which is a genuine difference between the two screens.
+                logger.LogWarning($"Could not spawn {(EEnemy)spawnedEnemy.Name} at {spawnedEnemy.Position.ToUnityVector3()}: the enemy pool had nothing free. This enemy exists for other players but not here.");
                 return;
             }
 
@@ -1854,7 +1857,11 @@ namespace MegabonkTogether.Services
             var pickup = pickupManagerService.GetSpawnedPickupById(applied.PickupId);
             if (pickup == null)
             {
-                logger.LogWarning($"Pickup {applied.PickupId} for owner {applied.OwnerId} not found in PickupManagerService when processing OnReceivedPickupApplied.");
+                // Normal in a session, not a fault: pickups are consumed and despawned locally
+                // while messages about them are still in flight, so a message about one that has
+                // already gone simply has nothing to do. Logged quietly because a warning per
+                // occurrence buried real faults -- one session carried eighty of these.
+                logger.LogDebug($"Pickup {applied.PickupId} for owner {applied.OwnerId} had already gone when its applied message arrived.");
                 return;
             }
 
@@ -1940,7 +1947,11 @@ namespace MegabonkTogether.Services
             var pickup = pickupManagerService.GetSpawnedPickupById(player.PickupId);
             if (pickup == null)
             {
-                logger.LogWarning($"Pickup {player.PickupId} not found in PickupManagerService when processing OnReceivedPickupFollowingPlayer by player {player.PlayerId}.");
+                // Normal in a session, not a fault: pickups are consumed and despawned locally
+                // while messages about them are still in flight, so a message about one that has
+                // already gone simply has nothing to do. Logged quietly because a warning per
+                // occurrence buried real faults -- one session carried eighty of these.
+                logger.LogDebug($"Pickup {player.PickupId} had already gone when player {player.PlayerId} was said to be collecting it.");
                 return;
             }
 
@@ -1998,7 +2009,11 @@ namespace MegabonkTogether.Services
             var pickup = pickupManagerService.GetSpawnedPickupById(pickupId);
             if (pickup == null)
             {
-                logger.LogWarning($"Pickup {pickupId} not found in PickupManagerService when processing HandleWantToStartFollowingPickup.");
+                // Normal in a session, not a fault: pickups are consumed and despawned locally
+                // while messages about them are still in flight, so a message about one that has
+                // already gone simply has nothing to do. Logged quietly because a warning per
+                // occurrence buried real faults -- one session carried eighty of these.
+                logger.LogDebug($"Pickup {pickupId} had already gone before anyone could start collecting it.");
                 return;
             }
 

@@ -338,7 +338,10 @@ namespace MegabonkTogether
         {
             if (originalDiedAction == null)
             {
-                Log.LogWarning("Death not prevented");
+                // Ordinary: restoring is called on paths where death was never intercepted in
+                // the first place, including returning to the menu. Nothing is wrong and nothing
+                // needs doing, so this is not worth a warning.
+                Log.LogDebug("Death was never intercepted, so there is nothing to restore.");
                 return;
             }
 

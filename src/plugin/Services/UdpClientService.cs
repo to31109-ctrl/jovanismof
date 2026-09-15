@@ -99,6 +99,8 @@ namespace MegabonkTogether.Services
         private bool isHandlingConnection = false;
         private bool hasHandledHost = false;
         private bool isGameOver = false;
+        /// <summary>Said once per disconnection rather than once per dropped message.</summary>
+        private bool reportedNoHost;
 
         private string rdvServerHost;
         private int rdvServerPort;
@@ -1116,6 +1118,7 @@ namespace MegabonkTogether.Services
             expectedPeerCount = 0;
             hasAllPeersConnected = false;
             isGameOver = false;
+            reportedNoHost = false;
             gamePeers.Clear();
             netManager?.Stop();
             hasStarted = false;
@@ -1570,7 +1573,14 @@ namespace MegabonkTogether.Services
 
             if (gamePeers.Count == 0)
             {
-                Plugin.Log.LogWarning("Not connected to host");
+                // Said once. When a host closes the game, everything the client was about to
+                // send fails at once and this filled the log with the same line dozens of times,
+                // which hides whatever actually went wrong just before it.
+                if (!reportedNoHost)
+                {
+                    reportedNoHost = true;
+                    Plugin.Log.LogWarning("Not connected to the host; anything this player sends is being dropped until they reconnect.");
+                }
                 return;
             }
 

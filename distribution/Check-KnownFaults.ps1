@@ -257,6 +257,21 @@ if (Test-Path -LiteralPath $keys) {
     }
 }
 
+# 16. A recycled enemy must not be re-registered on the minimap while its old entry is still
+#     there. The game adds to that dictionary with Add, which throws, and the throw happens
+#     inside InitEnemy -- so the enemy is left half set up, active and never finished. This is
+#     the most likely cause found for enemies that drift or behave as if they were never given
+#     their state.
+$minimap = Join-Path $repo 'src/plugin/Patches/MinimapCamera.cs'
+if (!(Test-Path -LiteralPath $minimap)) {
+    $faults += 'src/plugin/Patches/MinimapCamera.cs is gone, so a recycled enemy can throw halfway through InitEnemy again.'
+} else {
+    $minimapText = Get-Content -Raw -LiteralPath $minimap
+    if ($minimapText -notmatch 'MinimapCamera\.OnEnemySpawn' -or $minimapText -notmatch 'ContainsKey') {
+        $faults += 'MinimapCamera.cs no longer clears a stale icon before an enemy is set up again, so InitEnemy can throw partway through.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red
