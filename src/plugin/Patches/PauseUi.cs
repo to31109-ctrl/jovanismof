@@ -35,6 +35,7 @@ namespace MegabonkTogether.Patches
             // BonkLink edition, 2026-09-13: the host can checkpoint the world by hand from here,
             // rather than trusting the next autosave to land before they stop playing.
             TryAddSaveButton(__instance);
+            TryAddPauseButton(__instance);
         }
 
         private static void TryAddSaveButton(PauseUi pauseUi)
@@ -101,6 +102,98 @@ namespace MegabonkTogether.Patches
             catch (System.Exception ex)
             {
                 Plugin.Log.LogWarning($"Could not add the co-op save button to the pause menu: {ex.Message}");
+            }
+        }
+
+        private static ButtonTextWrapper pauseButtonText;
+        private const string PauseButtonName = "BonkLinkCoopPauseButton";
+
+        /// <summary>
+        /// Lets the host hold the whole session while somebody who dropped out comes back.
+        /// Built from the same clone-a-real-button recipe as the save button; anything built
+        /// from scratch on these menus renders and never takes a click.
+        /// </summary>
+        private static void TryAddPauseButton(PauseUi pauseUi)
+        {
+            try
+            {
+                var isHost = synchronizationService.IsServerMode() ?? false;
+                if (!isHost) return;
+
+                var existing = Il2CppFindHelper.RuntimeGetComponentsInChildren<CustomButton>(pauseUi)
+                    .FirstOrDefault(b => b != null && b.gameObject.name == PauseButtonName);
+                if (existing != null)
+                {
+                    RefreshPauseLabel();
+                    return;
+                }
+
+                var template = Il2CppFindHelper.RuntimeGetComponentsInChildren<MyButton>(pauseUi)
+                    .FirstOrDefault(b => b != null
+                        && b.gameObject.name != SaveButtonName
+                        && b.gameObject.name != PauseButtonName
+                        && b.gameObject.GetComponent<ButtonTextWrapper>() != null);
+                if (template == null) return;
+
+                var pauseObject = GameObject.Instantiate(template.gameObject);
+                pauseObject.name = PauseButtonName;
+                pauseObject.transform.SetParent(template.transform.parent, false);
+                pauseObject.transform.SetAsLastSibling();
+                pauseObject.SetActive(true);
+
+                foreach (var inherited in pauseObject.RuntimeGetComponents<MyButton>())
+                {
+                    Object.DestroyImmediate(inherited);
+                }
+
+                var unityButton = pauseObject.GetComponentInChildren<UnityEngine.UI.Button>();
+                if (unityButton != null) unityButton.onClick = new();
+
+                foreach (var localizer in pauseObject.RuntimeGetComponentsInChildren<LocalizeStringEvent>(true))
+                {
+                    Object.DestroyImmediate(localizer);
+                }
+
+                var custom = pauseObject.AddComponent<CustomButton>();
+                custom.SetOnClickAction(OnCoopPauseClicked);
+
+                pauseButtonText = pauseObject.GetComponent<ButtonTextWrapper>();
+                RefreshPauseLabel();
+
+                custom.state = MyButton.EButtonState.Active;
+                custom.RefreshState();
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not add the co-op pause button to the pause menu: {ex.Message}");
+            }
+        }
+
+        private static void RefreshPauseLabel()
+        {
+            try
+            {
+                if (pauseButtonText?.t_text != null)
+                {
+                    pauseButtonText.t_text.text = CoopPause.Held ? "Resume Everyone" : "Pause Everyone";
+                }
+            }
+            catch { /* a stale label is not worth an exception */ }
+        }
+
+        private static void OnCoopPauseClicked()
+        {
+            try { AudioManager.Instance.PlaySfx(AudioManager.Instance.uiSelect.sounds[0]); }
+            catch { }
+
+            try
+            {
+                CoopPause.Toggle();
+                RefreshPauseLabel();
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not change the co-op pause: {ex.Message}");
             }
         }
 

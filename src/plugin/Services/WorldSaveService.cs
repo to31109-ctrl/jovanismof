@@ -210,6 +210,22 @@ namespace MegabonkTogether.Services
                     var gaps = save.MissingState.Count == 0 ? "" : $"; incomplete: {string.Join(", ", save.MissingState)}";
                     logger.LogInfo($"Co-op checkpoint {save.Revision} ({reason}): {save.Players.Count} players, {save.Enemies.Count} enemies, {save.ElapsedSeconds:F0}s{gaps}");
 
+                    // A checkpoint the host asked for by hand is almost always someone saying
+                    // "something just went wrong", so it is the right moment to gather what
+                    // every other player's log has to say about it.
+                    if (reason == "pause menu" || reason == "session ended")
+                    {
+                        try
+                        {
+                            CoopLogCollector.Store(ModConfig.PlayerName.Value ?? "host", 0, CoopLogCollector.ReadOwnTail());
+                            Plugin.Services.GetService<IUdpClientService>()?.SendToAllClients(
+                                new Common.Messages.GameNetworkMessages.LogRequested(),
+                                LiteNetLib.DeliveryMethod.ReliableOrdered);
+                            logger.LogInfo($"Asked everyone for their log; they arrive in {CoopLogCollector.Folder}");
+                        }
+                        catch (Exception ex) { logger.LogWarning($"Could not collect the other players' logs: {ex.Message}"); }
+                    }
+
                     try { store.Prune(Math.Max(1, ModConfig.CoopWorldsKept.Value)); }
                     catch (Exception ex) { logger.LogWarning($"Co-op checkpoint pruning failed: {ex.Message}"); }
 

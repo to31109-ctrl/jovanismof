@@ -293,6 +293,10 @@ namespace MegabonkTogether.Services
             catch (Exception ex) { logger.LogWarning($"Final co-op checkpoint failed: {ex.Message}"); }
 
             currentState = State.None;
+
+            // A hold must never outlive the session it was made in: frozen with no host left to
+            // unfreeze you is not a state anybody can get out of.
+            Patches.CoopPause.Clear();
             toSpawns.Clear();
             toUpdate.Clear();
 

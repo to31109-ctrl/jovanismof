@@ -59,7 +59,15 @@ namespace MegabonkTogether.Patches
 
             var isFriendlyMode = Plugin.Instance.Mode.Mode == NetworkModeType.Friendlies;
 
-            if (isFriendlyMode && !startApproved)
+            // Telling the matchmaking server the game has begun is exactly what makes it turn
+            // away anyone trying to join afterwards, which is why somebody who closed the game
+            // could never get back into the run. A private room already needs its code to enter,
+            // so leaving it open costs nothing and is what lets them return.
+            if (isFriendlyMode && Configuration.ModConfig.KeepLobbyOpenForRejoin.Value)
+            {
+                Plugin.Log.LogInfo("Leaving the room open so a player who drops out can rejoin this run.");
+            }
+            else if (isFriendlyMode && !startApproved)
             {
                 if (isWaitingForServerResponse) return false;
                 isWaitingForServerResponse = true;

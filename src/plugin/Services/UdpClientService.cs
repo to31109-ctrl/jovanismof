@@ -754,6 +754,24 @@ namespace MegabonkTogether.Services
                     // was only ever told about its own. It therefore never saw the lobby become
                     // ready again and waited on "Waiting for other players" for ever, while the
                     // host -- which does see everyone -- carried on into the next area.
+                    // The host is asking for the end of our log so a fault can be read from
+                    // both sides. Nothing else is ever read or sent.
+                    case CoopPauseChanged coopPause:
+                        Patches.CoopPause.ApplyFromHost(coopPause.Paused);
+                        break;
+                    case LogRequested:
+                        if (Configuration.ModConfig.ShareMyLogWithHost.Value)
+                        {
+                            var me = playerManagerService.GetLocalPlayer();
+                            SendToHost(new LogReported
+                            {
+                                ConnectionId = me?.ConnectionId ?? 0,
+                                Name = Configuration.ModConfig.PlayerName.Value ?? "player",
+                                Tail = CoopLogCollector.ReadOwnTail(),
+                            }, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                            Plugin.Log.LogInfo("Sent the end of my log to the host, who asked for it.");
+                        }
+                        break;
                     case ClientInGameReady readyElsewhere:
                         var readyPlayer = playerManagerService.GetPlayer(readyElsewhere.ConnectionId);
                         if (readyPlayer != null)
@@ -1078,6 +1096,9 @@ namespace MegabonkTogether.Services
                     // Kept for checkpoints only, so there is nothing to pass on to anyone else.
                     case PlayerStatsReported statsReported:
                         playerManagerService.SetReportedStats(statsReported.ConnectionId, statsReported.Stats);
+                        break;
+                    case LogReported logReported:
+                        CoopLogCollector.Store(logReported.Name, logReported.ConnectionId, logReported.Tail);
                         break;
                     default:
                         Plugin.Log.LogWarning($"Unknown message type received {message}");

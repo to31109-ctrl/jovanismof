@@ -28,6 +28,8 @@ namespace MegabonkTogether.Configuration
         public static ConfigEntry<float> ReviveGhostHealthPercent { get; private set; }
         public static ConfigEntry<bool> ReviveGhostFlies { get; private set; }
         public static ConfigEntry<bool> ReviveOnAreaBossDeath { get; private set; }
+        public static ConfigEntry<bool> KeepLobbyOpenForRejoin { get; private set; }
+        public static ConfigEntry<bool> ShareMyLogWithHost { get; private set; }
         public static ConfigEntry<float> ReviveHoldSeconds { get; private set; }
         public static ConfigEntry<bool> ReviveNeedsGhost { get; private set; }
         public static ConfigEntry<bool> ReviveOnNewArea { get; private set; }
@@ -171,6 +173,18 @@ namespace MegabonkTogether.Configuration
                 "ReviveGhostFlies",
                 false,
                 "Let the revive ghost fly. It is built from a flying enemy, and left flying it drifts up and away from the players trying to kill it."
+            );
+            ShareMyLogWithHost = config.Bind(
+                "Gameplay",
+                "ShareMyLogWithHost",
+                true,
+                "When the host of a private room saves the world, send them the end of your JOVANISMOF log so a fault can be read from both sides instead of guessed at. Only this mod's own log is ever sent, only its last part, and only to the host of a room you are already in. Set to false to send nothing."
+            );
+            KeepLobbyOpenForRejoin = config.Bind(
+                "Gameplay",
+                "KeepLobbyOpenForRejoin",
+                true,
+                "Leave a private Friendlies room joinable after the run has started, so somebody who closed the game can come back into it with the room code. Telling the matchmaking server the game had begun is what made it refuse them. Only affects private rooms, which already need the code to enter."
             );
             ReviveOnAreaBossDeath = config.Bind(
                 "Gameplay",

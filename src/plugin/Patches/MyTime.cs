@@ -18,6 +18,10 @@ namespace MegabonkTogether.Patches
         [HarmonyPatch(nameof(MyTime.Pause))]
         public static bool Pause_Postfix()
         {
+            // The host holding the game for a player who is rejoining. Refusing this would
+            // make the button do nothing in exactly the session it exists for.
+            if (CoopPause.Held) return true;
+
             if (!synchronizationService.HasNetplaySessionStarted())
             {
                 return true;
