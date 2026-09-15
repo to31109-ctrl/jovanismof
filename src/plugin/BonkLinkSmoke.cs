@@ -121,7 +121,10 @@ public class BonkLinkSmoke : MonoBehaviour
         }
         if (walletProbeStep == 5 && liveSeconds > 60)
         {
-            var window = UnityEngine.Object.FindObjectOfType<ChestWindowUi>();
+            // The generic overload throws under IL2CPP; the one taking a Type does not. This
+            // almost certainly threw every time, which is why the paid-chest probe never
+            // reported anything useful.
+            var window = UnityEngine.Object.FindObjectOfType(typeof(ChestWindowUi))?.TryCast<ChestWindowUi>();
             if (window == null) Plugin.Log.LogError("BONKLINK_CHEST_BUY: no chest window");
             else
             {
@@ -160,6 +163,15 @@ public class BonkLinkSmoke : MonoBehaviour
         Application.runInBackground = true;
         elapsed = (float)(DateTime.UtcNow - launchTime).TotalSeconds;
         if (elapsed > 180 && Environment.GetCommandLineArgs().Contains("--bonklink.walletcheck")) { Application.Quit(); return; }
+        // The menu check has to happen while there is still a menu. Everything below waits for
+        // 15 seconds and the host starts its run at exactly that point, so a check gated behind
+        // the same guard never had a window to run in and silently did nothing.
+        if (!menuUiChecked && elapsed > 8 && Environment.GetCommandLineArgs().Contains("--bonklink.uicheck"))
+        {
+            menuUiChecked = true;
+            CheckMenuUi();
+        }
+
         if (elapsed < 15 || done) return;
         var args = Environment.GetCommandLineArgs();
         bool host = args.Contains("--bonklink.host");
@@ -171,11 +183,6 @@ public class BonkLinkSmoke : MonoBehaviour
         {
             var hostHealth = GameManager.Instance?.player?.inventory?.playerHealth;
             if (hostHealth != null && hostHealth.hp < hostHealth.maxHp) hostHealth.hp = hostHealth.maxHp;
-        }
-        if (!menuUiChecked && elapsed > 16 && args.Contains("--bonklink.uicheck"))
-        {
-            menuUiChecked = true;
-            CheckMenuUi();
         }
         if (host || client)
         {
@@ -464,6 +471,30 @@ public class BonkLinkSmoke : MonoBehaviour
             catch { return null; }
         }
 
+        List<CustomButton> WorldRowButtons()
+        {
+            var found = new List<CustomButton>();
+            try
+            {
+                // Asked of the menu directly. The generic object-find overloads do not exist
+                // under IL2CPP: FindObjectsOfType<T>() compiles and throws, and thrown inside
+                // this coroutine it stopped the whole check reporting anything at all.
+                var rowsField = AccessTools.Field(typeof(MegabonkTogether.Scripts.NetworkMenuTab), "worldRows");
+                if (rowsField?.GetValue(tab) is System.Collections.IEnumerable rows)
+                {
+                    foreach (var row in rows)
+                    {
+                        var root = row?.GetType().GetField("Root")?.GetValue(row) as GameObject;
+                        if (root == null || !root.activeInHierarchy) continue;
+                        var button = root.GetComponent<CustomButton>();
+                        if (button != null) found.Add(button);
+                    }
+                }
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning($"BONKLINK_UI: could not enumerate world rows: {ex.Message}"); }
+            return found;
+        }
+
         void Record(string name, string fragment)
         {
             if (SceneHasLabel(fragment)) present.Add(name); else missing.Add(name);
@@ -479,8 +510,53 @@ public class BonkLinkSmoke : MonoBehaviour
         yield return null;
         yield return null;
 
-        Record("world picker", "World to host");
-        Record("new world choice", "New World");
+        // The world list is a screen of its own now, reached from a button on Friendlies.
+        // Every fault it has had -- rows that render and never take a click, a list left over
+        // the main menu, a name box that lost what was typed -- is invisible unless the flow is
+        // actually walked, so the check walks it.
+        Record("world button", "World:");
+
+        var worldButton = Button("worldChooseButton");
+        if (worldButton == null)
+        {
+            missing.Add("world button");
+        }
+        else
+        {
+            // No try around this: an iterator cannot yield inside one, and the clicks have to
+            // be followed by real frames for the menu to respond to them.
+            worldButton.OnClick();
+            yield return null;
+            yield return null;
+
+            Record("world screen opens", "Choose a World");
+            Record("create new world row", "Create New World");
+            Record("confirm button", "Use this world");
+
+            // Friendlies must be out of the way, or its buttons sit over the rows and take the
+            // clicks meant for them, which is exactly how the rows came to look unresponsive.
+            if (SceneHasLabel("Room Code")) missing.Add("friendlies hidden behind world screen");
+            else present.Add("friendlies hidden behind world screen");
+
+            var rows = WorldRowButtons();
+            if (rows.Count == 0)
+            {
+                missing.Add("world rows exist");
+            }
+            else
+            {
+                present.Add("world rows exist");
+                rows[0].OnClick();
+                yield return null;
+                yield return null;
+
+                if (SceneHasLabel("Choose a World")) missing.Add("choosing a world closes the list");
+                else present.Add("choosing a world closes the list");
+
+                if (SceneHasLabel("Room Code")) present.Add("friendlies comes back");
+                else missing.Add("friendlies comes back");
+            }
+        }
 
         // Press Host for real: it threw on an unsupported GameObject constructor once, and a
         // button whose handler dies looks exactly like a button that is not clickable.

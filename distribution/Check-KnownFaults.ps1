@@ -37,6 +37,12 @@ foreach ($file in $source) {
         if ($line -match '(?<!Runtime)\.GetComponents<' -and $line -notmatch 'RuntimeGetComponents') {
             $faults += "$($file.Name):$n calls GetComponents<T>(), which throws under IL2CPP. Use RuntimeGetComponents<T>()."
         }
+        # Same family, and it cost a whole test run: thrown inside a coroutine it stopped the
+        # UI check reporting anything at all, which read as the check simply not running.
+        # A rule that reads its own explanatory comment as a fault cries wolf.
+        if ($line -notmatch '^\s*(//|\*)' -and ($line -match 'FindObjectsOfType<' -or $line -match 'FindObjectOfType<')) {
+            $faults += "$($file.Name):$n calls FindObjectsOfType<T>(), which throws under IL2CPP. Ask the object that owns them instead."
+        }
     }
 }
 

@@ -43,6 +43,23 @@ try {
     if (Test-Path -LiteralPath $bepInExConfig) {
         $existing = Get-Content -LiteralPath $bepInExConfig -Raw
         $updated = [regex]::Replace($existing, '(?m)^(\[Logging\.Console\][\s\S]*?^Enabled\s*=\s*)true', '${1}false')
+
+        # Only the console was ever switched off here, and an existing config was left with disk
+        # logging however BepInEx had it -- which is off. Players then had no LogOutput.log at
+        # all, so nothing they reported could be diagnosed from their own machine.
+        $diskSection = [regex]::Match($updated, '(?ms)^\[Logging\.Disk\].*?(?=^\[|\z)')
+        if ($diskSection.Success) {
+            $diskText = $diskSection.Value
+            if ($diskText -match '(?m)^Enabled\s*=') {
+                $diskText = [regex]::Replace($diskText, '(?m)^Enabled\s*=.*$', 'Enabled = true')
+            } else {
+                $diskText = $diskText.TrimEnd() + "`r`nEnabled = true`r`n"
+            }
+            $updated = $updated.Substring(0, $diskSection.Index) + $diskText + $updated.Substring($diskSection.Index + $diskSection.Length)
+        } else {
+            $updated = $updated.TrimEnd() + "`r`n`r`n[Logging.Disk]`r`nEnabled = true`r`n"
+        }
+
         if ($updated -ne $existing) { Set-Content -LiteralPath $bepInExConfig -Value $updated -Encoding UTF8 }
     } else {
         @'

@@ -528,7 +528,7 @@ namespace MegabonkTogether.Scripts
             worldDoneButton = CreateMenuButton("WorldDoneButton", panel.transform,
                 new Vector2(0f, -200f), new Vector2(300f, 60f), 26f,
                 TextAlignmentOptions.Center, () => ShowWorldScreen(false), out var doneLabel);
-            if (doneLabel != null) doneLabel.text = "Back";
+            if (doneLabel != null) doneLabel.text = "Use this world";
             worldDoneButton.gameObject.SetActive(false);
         }
 
@@ -559,8 +559,17 @@ namespace MegabonkTogether.Scripts
                 if (open) worldListRoot.transform.SetAsLastSibling();
             }
 
-            if (open) RefreshWorldChoices();
-            else if (worldNameRow != null) worldNameRow.SetActive(false);
+            if (open)
+            {
+                RefreshWorldChoices();
+            }
+            else
+            {
+                // Closing is the confirmation, so this is when whatever was typed is taken.
+                var chosen = worldChoices.Count > worldChoiceIndex ? worldChoices[worldChoiceIndex] : System.Guid.Empty;
+                CommitWorldName(chosen == System.Guid.Empty ? GetChosenWorldName() : "");
+                if (worldNameRow != null) worldNameRow.SetActive(false);
+            }
 
             RefreshChooseButton();
         }
@@ -799,9 +808,8 @@ namespace MegabonkTogether.Scripts
 
             // Choosing closes the list and returns to Friendlies, where the button now names
             // what was picked. Selecting in place gave no sign anything had happened, which is
-            // why picking a world and pressing Create New World both looked like dead buttons.
-            // Naming a new world is the one reason to stay: the box is right there.
-            if (worldChoices[choice] != System.Guid.Empty) ShowWorldScreen(false);
+            // why picking a world and pressing Create New World both read as dead buttons.
+            ShowWorldScreen(false);
         }
 
         private void OnWorldDeleteClicked(int rowIndex)
@@ -881,6 +889,17 @@ namespace MegabonkTogether.Scripts
             if (worldScrollDown != null) worldScrollDown.SetActive(worldChoices.Count > VisibleWorldRows);
         }
 
+        /// <summary>Hands the chosen name to the save service, where it sticks to the world.</summary>
+        private void CommitWorldName(string name)
+        {
+            try
+            {
+                var service = Plugin.Services.GetService<IWorldSaveService>();
+                if (service != null) service.PendingWorldName = name ?? "";
+            }
+            catch (System.Exception ex) { Plugin.Log.LogWarning($"Could not set the world name: {ex.Message}"); }
+        }
+
         /// <summary>The name the host typed for a new world, or nothing to let it be named for them.</summary>
         public string GetChosenWorldName() => worldNameInput != null ? (worldNameInput.text ?? "").Trim() : "";
 
@@ -956,14 +975,9 @@ namespace MegabonkTogether.Scripts
             var isNew = chosen == System.Guid.Empty;
             if (worldNameRow != null) worldNameRow.SetActive(isNew && worldScreenOpen);
 
-            // The name travels with the world for its whole life, so it is handed over as soon
-            // as the host picks "Create New World" rather than read back later from the menu.
-            try
-            {
-                var service = Plugin.Services.GetService<IWorldSaveService>();
-                if (service != null) service.PendingWorldName = isNew ? GetChosenWorldName() : "";
-            }
-            catch (System.Exception ex) { Plugin.Log.LogWarning($"Could not set the world name: {ex.Message}"); }
+            // The name is typed after the row is picked, so it is read when the screen is
+            // left rather than here, where it was always still empty.
+            if (!isNew) CommitWorldName("");
 
             // Keep the chosen row selected and scrolled into view.
             if (worldChoiceIndex < worldListOffset) worldListOffset = worldChoiceIndex;
