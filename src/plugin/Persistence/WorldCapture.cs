@@ -80,11 +80,30 @@ namespace MegabonkTogether.Persistence
                 }
 
                 save.Map = (int)config.mapData.eMap;
-                save.Stage = config.stageData?.name ?? "";
+
+                // The stage the party is standing in, not the one the run began on.
+                //
+                // This used to read config.stageData, which is part of the *run* configuration
+                // and never changes after the first stage is generated. Every checkpoint of
+                // every run therefore claimed to be on the map's first stage: a party at level
+                // 59 in the final area saved a world reading "Stage: StageForest1, StageIndex: 1".
+                // Loading it then did exactly what it said and put everyone back at the
+                // beginning, which is what "loading a world sends us back to the start" was.
+                // MapController.currentStage is what the rest of the mod already uses to know
+                // where the party is -- GameBalanceService reads it to scale each stage.
+                var currentStage = MapController.currentStage;
+                save.Stage = currentStage?.name ?? config.stageData?.name ?? "";
+
                 save.Tier = config.mapTierIndex;
                 save.Music = config.musicTrackIndex;
                 save.Challenge = config.challenge?.name ?? "";
-                save.StageIndex = MapController.index;
+
+                // Likewise taken from where the party actually is. MapController.index is not
+                // the stage number and was the other half of the same mistake.
+                var stages = config.mapData?.stages;
+                var index = (stages != null && currentStage != null) ? stages.IndexOf(currentStage) : -1;
+                save.StageIndex = index >= 0 ? index : MapController.index;
+
                 save.Name = $"{config.mapData.eMap} - {save.Stage}";
             }
             catch (Exception ex)

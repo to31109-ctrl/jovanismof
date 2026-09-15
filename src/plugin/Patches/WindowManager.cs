@@ -151,32 +151,32 @@ namespace MegabonkTogether.Patches
 
             if (WindowManager.activeWindow?.name == "Maps And Stats")
             {
-                if (Plugin.Instance.Mode.Mode == NetworkModeType.Friendlies && Plugin.Instance.Mode.Role == Role.Host)
+                // Shown to everybody in the room, not only the host. Whoever is waiting, the
+                // useful thing is knowing *who* is holding it up -- a count told the host that
+                // two of four were ready and nothing told anyone which two.
+                if (Plugin.Instance.Mode.Mode == NetworkModeType.Friendlies)
                 {
                     var mainMenu = Plugin.Instance.GetMainMenu();
+                    var isHost = Plugin.Instance.Mode.Role == Role.Host;
 
-                    var confirmButton = mainMenu.mapSelectionUi.btnConfirm;
-
-                    if (confirmButton == null) return;
-
-                    if (playerManagerService.GetAllPlayers().Count() < 2 || !udpClientService.AreAllPeersReady() || udpClientService.IsHandlingConnection())
+                    if (!readyStatusDisplay)
                     {
-                        confirmButton.state = MyButton.EButtonState.Inactive;
-                        confirmButton.RefreshState();
-
-                        if (!readyStatusDisplay)
-                        {
-                            CreateReadyStatusDisplay(mainMenu.tabMaps.transform);
-                        }
-
-                        UpdateReadyStatusDisplay();
+                        CreateReadyStatusDisplay(mainMenu.tabMaps.transform);
                     }
-                    else
-                    {
-                        confirmButton.state = MyButton.EButtonState.Active;
-                        confirmButton.RefreshState();
 
-                        DestroyReadyStatusDisplay();
+                    UpdateReadyStatusDisplay();
+
+                    if (isHost)
+                    {
+                        var confirmButton = mainMenu.mapSelectionUi.btnConfirm;
+                        if (confirmButton == null) return;
+
+                        var waiting = playerManagerService.GetAllPlayers().Count() < 2
+                            || !udpClientService.AreAllPeersReady()
+                            || udpClientService.IsHandlingConnection();
+
+                        confirmButton.state = waiting ? MyButton.EButtonState.Inactive : MyButton.EButtonState.Active;
+                        confirmButton.RefreshState();
                     }
                 }
                 else
@@ -353,6 +353,13 @@ namespace MegabonkTogether.Patches
             text.fontSize = 36;
         }
 
+        /// <summary>
+        /// Everyone in the room, by name, and whether they are ready.
+        ///
+        /// This used to be a count of peers, which told you two of four were ready and nothing
+        /// about which two. When a start is being held up, the only question anybody actually
+        /// has is who it is waiting for.
+        /// </summary>
         private static void UpdateReadyStatusDisplay()
         {
             if (!readyStatusDisplay) return;
@@ -363,10 +370,40 @@ namespace MegabonkTogether.Patches
             var text = textObj.GetComponent<TextMeshProUGUI>();
             if (text == null) return;
 
-            int readyCount = udpClientService.GetCurrentReadyPeersCount();
-            int totalCount = playerManagerService.GetAllPlayers().Count() - 1;
+            try
+            {
+                var players = playerManagerService.GetAllPlayers()
+                    .Where(p => p != null)
+                    .OrderByDescending(p => p.IsHost)
+                    .ThenBy(p => p.ConnectionId)
+                    .ToList();
 
-            text.text = $"Waiting for players to be ready...\nReady: {readyCount}/{totalCount}";
+                if (players.Count == 0)
+                {
+                    text.text = "<size=26>Waiting for players...</size>";
+                    return;
+                }
+
+                var readyCount = players.Count(p => p.IsReady);
+                var lines = new System.Text.StringBuilder();
+                lines.Append($"<size=26>In this room  {readyCount}/{players.Count} ready</size>");
+
+                foreach (var player in players)
+                {
+                    var name = string.IsNullOrWhiteSpace(player.Name) ? "player" : player.Name;
+                    if (name.Length > 16) name = name.Substring(0, 16);
+
+                    var mark = player.IsReady ? "<color=#8CFF9E>READY</color>" : "<color=#FFD166>waiting</color>";
+                    var host = player.IsHost ? " (host)" : "";
+                    lines.Append($"\n<size=22>{name}{host}  {mark}</size>");
+                }
+
+                text.text = lines.ToString();
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not draw the room list: {ex.Message}");
+            }
         }
 
         private static void DestroyReadyStatusDisplay()

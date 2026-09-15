@@ -130,6 +130,8 @@ namespace MegabonkTogether.Services
         public void PlayerXpAddXp(int xp, int amount, float leftOverXp);
         public void RewardFinished();
         public void OnChangeGold(int amount);
+        /// <summary>How many players are standing in one shrine right now, at least one.</summary>
+        int CountPlayersChargingShrine(uint shrineNetplayId);
     }
     internal class SynchronizationService : ISynchronizationService
     {
@@ -262,7 +264,10 @@ namespace MegabonkTogether.Services
             var host = playerManagerService.GetHost();
             if (host == null)
             {
-                logger.LogWarning("No host found when checking if lobby is ready.");
+                // Ordinary once a session has ended: this is still polled at the menu, where the
+                // roster is empty and there is no host to find. It filled one session's log with
+                // 550 copies of itself, which is how a real fault goes unnoticed.
+                logger.LogDebug("No host in the roster; there is no session to be ready for.");
                 return false;
             }
 
@@ -558,6 +563,37 @@ namespace MegabonkTogether.Services
             return null;
         }
 
+        /// <summary>
+        /// Brings everyone who died in the last area back, standing where the party arrived.
+        ///
+        /// Dying used to mean sitting out the rest of the run unless somebody found a coffin for
+        /// you. Moving to a new area is a clean break and the natural place to undo it, and it
+        /// means a portal never leaves anybody behind -- dead or alive. Host only: it is the host
+        /// that decides a player is alive, and OnRespawn tells everybody else.
+        /// </summary>
+        private void ReviveEveryoneForTheNewStage()
+        {
+            try
+            {
+                if ((IsServerMode() ?? false) == false) return;
+
+                var arrival = GameManager.Instance?.player?.transform?.position;
+                if (arrival == null) return;
+
+                foreach (var player in playerManagerService.GetAllPlayers().ToList())
+                {
+                    if (player == null || player.Hp > 0) continue;
+
+                    logger.LogInfo($"Bringing {player.Name} back for the new area; they died in the last one.");
+                    OnRespawn(player.ConnectionId, arrival.Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Could not bring the dead back for the new area: {ex.Message}");
+            }
+        }
+
         public void StartGame()
         {
             if (currentState >= State.Started)
@@ -599,6 +635,10 @@ namespace MegabonkTogether.Services
 
             try { WorldSaves?.OnSessionStarted(); }
             catch (Exception ex) { logger.LogError($"Co-op checkpoint restore failed: {ex}"); }
+
+            // After the stage is live and everyone has been placed, so the arrival point is a
+            // real position in the new area rather than wherever the last one left them.
+            ReviveEveryoneForTheNewStage();
         }
 
         private void SendSpawnedObject(uint netplayId, GameObject obj)
@@ -1483,6 +1523,15 @@ namespace MegabonkTogether.Services
         {
             ECharacter character = CharacterMenu.selectedCharacter;
 
+            // The same rule for whoever is sitting at this machine.
+            var lockedToWorld = WorldSaves?.CharacterInSelectedWorld(Configuration.ModConfig.PlayerIdentity.Value);
+            if (lockedToWorld.HasValue && (uint)character != (uint)lockedToWorld.Value)
+            {
+                character = (ECharacter)lockedToWorld.Value;
+                CharacterMenu.selectedCharacter = character;
+                logger.LogInfo($"Continuing this world as {character}, the character it was played with.");
+            }
+
             var localPlayer = playerManagerService.GetLocalPlayer();
             localPlayer.Character = (uint)character;
             playerManagerService.UpdatePlayer(localPlayer);
@@ -1524,6 +1573,27 @@ namespace MegabonkTogether.Services
 
             player.Character = character.Character;
             player.Skin = character.Skin;
+
+            // Continuing a world puts everyone back as the character they were in it. Their
+            // level, upgrades and items are all restored onto that character, so playing a
+            // different one would hand them somebody else's build and lose their own. Corrected
+            // here, on the host, because the host is the only one that knows which world is
+            // being continued -- and the correction is passed straight back out below.
+            var locked = WorldSaves?.CharacterInSelectedWorld(player.Identity);
+            if (locked.HasValue && player.Character != (uint)locked.Value)
+            {
+                logger.LogInfo($"{player.Name} picked a character this world was not played with; putting them back as the one it remembers.");
+                player.Character = (uint)locked.Value;
+
+                IGameNetworkMessage correction = new SelectedCharacter
+                {
+                    ConnectionId = player.ConnectionId,
+                    Skin = player.Skin,
+                    Character = player.Character,
+                };
+                udpClientService.SendToAllClients(correction, LiteNetLib.DeliveryMethod.ReliableOrdered);
+            }
+
             playerManagerService.UpdatePlayer(player);
         }
 
@@ -4595,6 +4665,28 @@ namespace MegabonkTogether.Services
 
             encounterService.ClearClosedEncounters();
             MyTime.Unpause();
+        }
+
+        /// <summary>
+        /// How many players are charging one shrine. A shrine fills faster the more of the party
+        /// stand in it, which is what a co-op shrine ought to do and what the owner asked for.
+        /// Never less than one, so a shrine the mod has not tracked still charges normally.
+        /// </summary>
+        public int CountPlayersChargingShrine(uint shrineNetplayId)
+        {
+            try
+            {
+                if (shrineChargingPlayers.TryGetValue(shrineNetplayId, out var chargers) && chargers != null)
+                {
+                    return Math.Max(1, chargers.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Could not count who is charging a shrine: {ex.Message}");
+            }
+
+            return 1;
         }
 
         public void OnChangeGold(int amount)

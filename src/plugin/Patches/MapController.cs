@@ -51,11 +51,12 @@ namespace MegabonkTogether.Patches
 
             Plugin.Instance.IS_HOST_READY = true;
 
-            if (!udpClientService.AreAllPeersReady())
-            {
-                Plugin.Instance.ShowModal("Waiting for all players to be ready...");
-                return false;
-            }
+            // The stage change goes ahead whatever anyone's ready flag says, and every client
+            // follows it. Refusing to move until all peers reported ready is what left a player
+            // behind in the previous area -- still fighting a boss the rest of the party had
+            // killed, unable to follow, while everyone else stood at the next portal unable to
+            // continue. A portal takes the whole party, every time. It is the same rule as the
+            // level-up choice: nothing in a session may depend on every player checking in.
 
             var isFriendlyMode = Plugin.Instance.Mode.Mode == NetworkModeType.Friendlies;
 
@@ -124,11 +125,6 @@ namespace MegabonkTogether.Patches
             var isHost = synchronizationService.IsServerMode() ?? false;
 
             if (!isHost)
-            {
-                return;
-            }
-
-            if (!udpClientService.AreAllPeersReady())
             {
                 return;
             }

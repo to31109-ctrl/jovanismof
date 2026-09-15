@@ -16,6 +16,10 @@ namespace MegabonkTogether.Patches
     [HarmonyPatch(typeof(BaseEncounterWindow))]
     internal static class ChoiceWindowKeys
     {
+        private static readonly MegabonkTogether.Services.ISynchronizationService synchronizationService =
+            Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+                .GetService<MegabonkTogether.Services.ISynchronizationService>(Plugin.Services);
+
         [HarmonyPrefix]
         [HarmonyPatch(nameof(BaseEncounterWindow.OnClose))]
         private static bool OnClose_Prefix()
@@ -44,6 +48,11 @@ namespace MegabonkTogether.Patches
         {
             try
             {
+                // Co-op only. On your own there is nobody to be inconvenienced by a mis-press,
+                // and taking the window off the keyboard would stop anyone playing with a
+                // controller or the arrow keys from choosing at all.
+                if (!synchronizationService.HasNetplaySessionStarted()) return;
+
                 var events = UnityEngine.EventSystems.EventSystem.current;
                 if (events != null && events.currentSelectedGameObject != null)
                 {

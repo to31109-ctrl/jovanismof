@@ -214,7 +214,7 @@ namespace MegabonkTogether.Scripts
             {
                 if (textComp.name.StartsWith("Text"))
                 {
-                    textComp.text = "Allow Saving progression\nUse at your own risk";
+                    textComp.text = "Your game progress is kept\nCharacters and unlocks are saved";
                     textComp.fontSize = 20;
                     textComp.enableWordWrapping = false;
                 }
@@ -272,10 +272,12 @@ namespace MegabonkTogether.Scripts
             ToggleSaveOption(true);
         }
 
+        /// <summary>
+        /// Deliberately does nothing. Progress is always kept now, so there is no longer a
+        /// switch here that can cost somebody every character they have unlocked.
+        /// </summary>
         private void ToggleSaveOption(bool isEnabled)
         {
-            ModConfig.AllowSavesDuringNetplay.Value = isEnabled;
-            ModConfig.Save();
             UpdateSaveToggleStatus();
         }
 
@@ -283,8 +285,8 @@ namespace MegabonkTogether.Scripts
         {
             if (saveToggleStatusText != null)
             {
-                saveToggleStatusText.text = ModConfig.AllowSavesDuringNetplay.Value ? "ON" : "OFF";
-                saveToggleStatusText.color = ModConfig.AllowSavesDuringNetplay.Value ? Color.green : Color.red;
+                saveToggleStatusText.text = "ALWAYS";
+                saveToggleStatusText.color = Color.green;
             }
         }
 

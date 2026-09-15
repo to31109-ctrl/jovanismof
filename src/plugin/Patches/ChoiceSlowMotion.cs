@@ -51,6 +51,9 @@ namespace MegabonkTogether.Patches
         /// </summary>
         private const float LongestSlowdownSeconds = 40f;
 
+        /// <summary>True while the world is being held at a crawl for somebody's choice.</summary>
+        internal static bool IsSlowing => slowing;
+
         private static bool slowing;
         private static bool reportedScale;
         private static float slowedFor;

@@ -272,6 +272,43 @@ if (!(Test-Path -LiteralPath $minimap)) {
     }
 }
 
+# 17. A checkpoint must record the stage the party is standing in. It used to record
+#     runConfig.stageData, which never changes after the run begins, so every save of every run
+#     claimed to be on the map's first stage -- and loading one really did put everyone back at
+#     the beginning, because that is what the file said.
+$capture = Join-Path $repo 'src/plugin/Persistence/WorldCapture.cs'
+if (Test-Path -LiteralPath $capture) {
+    # Code only. The comment above this line in WorldCapture.cs names currentStage to explain
+    # what went wrong, and matching that would make this rule pass without the fix present.
+    $captureCode = Get-Content -LiteralPath $capture | Where-Object { $_ -notmatch '^\s*(//|///)' }
+    if (($captureCode -join "`n") -notmatch 'MapController\.currentStage') {
+        $faults += 'WorldCapture.cs no longer records MapController.currentStage, so every checkpoint claims to be on the first stage of the map.'
+    }
+}
+
+# 18. A portal takes the whole party. Waiting for every peer to report ready left a player behind
+#     in the previous area, still fighting a boss the others had already killed.
+$map = Join-Path $repo 'src/plugin/Patches/MapController.cs'
+if (Test-Path -LiteralPath $map) {
+    $mapLines = Get-Content -LiteralPath $map
+    for ($i = 0; $i -lt $mapLines.Count; $i++) {
+        if ($mapLines[$i] -match '^\s*(//|///)') { continue }
+        if ($mapLines[$i] -match 'AreAllPeersReady\s*\(') {
+            $faults += "MapController.cs:$($i + 1) makes a stage change wait for every peer to be ready, which leaves players behind in the old area."
+        }
+    }
+}
+
+# 19. The game's own progress is always saved. Making it a setting meant a player whose setting
+#     was off lost every character and unlock they earned in co-op, silently and for ever.
+$saves = Join-Path $repo 'src/plugin/Patches/SaveManager.cs'
+if (Test-Path -LiteralPath $saves) {
+    $savesText = Get-Content -Raw -LiteralPath $saves
+    if ($savesText -match 'AllowSavesDuringNetplay') {
+        $faults += 'SaveManager.cs gates the game''s own saving on a setting again; a player with it off loses every unlock earned in co-op.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red

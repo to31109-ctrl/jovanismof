@@ -9,7 +9,12 @@ using System.IO;
 namespace MegabonkTogether.Patches
 {
     /// <summary>
-    /// Prevent saving during netplay sessions
+    /// The game's own saving, which is left alone.
+    ///
+    /// Upstream blocks it during netplay so a co-op run cannot contaminate a single-player
+    /// profile. The cost of that is every unlock earned together being thrown away, which is a
+    /// far worse trade than the one it was protecting against -- and it was a setting, so some
+    /// players lost everything and others lost nothing with no way to tell which they were.
     /// </summary>
     [HarmonyPatch(typeof(SaveManager))]
     internal static class SaveManagerPatches
@@ -24,14 +29,11 @@ namespace MegabonkTogether.Patches
         [HarmonyPatch(nameof(SaveManager.SaveStats))]
         public static bool SaveGame_Prefix()
         {
-            if (synchronizationService.HasNetplaySessionInitialized() || synchronizationService.IsLoadingNextLevel())
-            {
-                if (!ModConfig.AllowSavesDuringNetplay.Value)
-                {
-                    Plugin.Log.LogInfo("Skipping SaveStats during netplay session");
-                    return false;
-                }
-            }
+            // Always. This used to depend on a per-machine setting, and a player whose setting
+            // was off lost every character, unlock and coin they earned in co-op -- silently,
+            // for ever, and reported four separate times. Nothing about playing together is a
+            // reason to throw away the progress the game made. Steam uploads are still blocked,
+            // which is what actually protects the leaderboards.
             return true;
         }
 
@@ -42,14 +44,11 @@ namespace MegabonkTogether.Patches
         [HarmonyPatch(nameof(SaveManager.SaveProgression))]
         public static bool SaveProgression_Prefix()
         {
-            if (synchronizationService.HasNetplaySessionInitialized() || synchronizationService.IsLoadingNextLevel())
-            {
-                if (!ModConfig.AllowSavesDuringNetplay.Value)
-                {
-                    Plugin.Log.LogInfo("Skipping SaveProgression during netplay session");
-                    return false;
-                }
-            }
+            // Always. This used to depend on a per-machine setting, and a player whose setting
+            // was off lost every character, unlock and coin they earned in co-op -- silently,
+            // for ever, and reported four separate times. Nothing about playing together is a
+            // reason to throw away the progress the game made. Steam uploads are still blocked,
+            // which is what actually protects the leaderboards.
             return true;
         }
 
@@ -60,14 +59,11 @@ namespace MegabonkTogether.Patches
         [HarmonyPatch(nameof(SaveManager.SaveConfig))]
         public static bool SaveConfig_Prefix()
         {
-            if (synchronizationService.HasNetplaySessionInitialized() || synchronizationService.IsLoadingNextLevel())
-            {
-                if (!ModConfig.AllowSavesDuringNetplay.Value)
-                {
-                    Plugin.Log.LogInfo("Skipping SaveConfig during netplay session");
-                    return false;
-                }
-            }
+            // Always. This used to depend on a per-machine setting, and a player whose setting
+            // was off lost every character, unlock and coin they earned in co-op -- silently,
+            // for ever, and reported four separate times. Nothing about playing together is a
+            // reason to throw away the progress the game made. Steam uploads are still blocked,
+            // which is what actually protects the leaderboards.
             return true;
         }
 
@@ -78,14 +74,11 @@ namespace MegabonkTogether.Patches
         [HarmonyPatch(nameof(SaveManager.SaveTemp))]
         public static bool SaveTemp_Prefix()
         {
-            if (synchronizationService.HasNetplaySessionInitialized() || synchronizationService.IsLoadingNextLevel())
-            {
-                if (!ModConfig.AllowSavesDuringNetplay.Value)
-                {
-                    Plugin.Log.LogInfo("Skipping SaveTemp during netplay session");
-                    return false;
-                }
-            }
+            // Always. This used to depend on a per-machine setting, and a player whose setting
+            // was off lost every character, unlock and coin they earned in co-op -- silently,
+            // for ever, and reported four separate times. Nothing about playing together is a
+            // reason to throw away the progress the game made. Steam uploads are still blocked,
+            // which is what actually protects the leaderboards.
             return true;
         }
 

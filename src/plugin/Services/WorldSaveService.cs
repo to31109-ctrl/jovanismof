@@ -78,6 +78,13 @@ namespace MegabonkTogether.Services
         /// <summary>Every saved world, newest first, for the host to choose between.</summary>
         IReadOnlyList<WorldSave> ListWorlds();
 
+        /// <summary>
+        /// The character a player had in the world being continued, found by the installation id
+        /// they are known by. Null when no world is being continued, or when this player was
+        /// never in it -- somebody joining a world for the first time picks freely.
+        /// </summary>
+        int? CharacterInSelectedWorld(string identity);
+
         /// <summary>Removes a saved world and its retained copy. Never touches a live session.</summary>
         bool DeleteWorld(Guid id);
 
@@ -236,6 +243,30 @@ namespace MegabonkTogether.Services
                     logger.LogError($"Co-op checkpoint ({reason}) failed: {ex}");
                     return false;
                 }
+            }
+        }
+
+        /// <summary>
+        /// A world remembers who played it as whom. Continuing it should put everyone back as the
+        /// character they were, because their level, upgrades and items are all restored onto
+        /// that character -- letting somebody pick a different one hands them another player's
+        /// build and loses their own.
+        /// </summary>
+        public int? CharacterInSelectedWorld(string identity)
+        {
+            if (SelectedWorldId == Guid.Empty || string.IsNullOrEmpty(identity)) return null;
+
+            try
+            {
+                var world = ListWorlds().FirstOrDefault(w => w.WorldId == SelectedWorldId);
+                var saved = world?.Players?.FirstOrDefault(p =>
+                    string.Equals(p.Identity, identity, StringComparison.Ordinal));
+                return saved?.Character;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Could not look up the character for a continued world: {ex.Message}");
+                return null;
             }
         }
 
