@@ -83,6 +83,12 @@ namespace MegabonkTogether.Services
         {
             try
             {
+                // Logged before anything else, and whatever the sharing setting says. Half the
+                // time spent on a report is spent not knowing what the other person is actually
+                // running, and a player still on an older build explains symptoms that were
+                // fixed days ago.
+                logger.LogInfo($"Player {connectionId} is running JOVANISMOF {(string.IsNullOrEmpty(theirVersion) ? "an unknown version" : theirVersion)}; this machine is on {OwnVersion}.");
+
                 if (!ModConfig.ShareUpdatesWithPeers.Value) return;
                 if (!InPrivateRoom) return;
                 if (peer == null) return;

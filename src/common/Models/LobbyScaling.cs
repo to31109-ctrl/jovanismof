@@ -22,7 +22,17 @@ public partial class LobbyScaling
     /// is what a party actually expects: two players, twice the mobs. Any other value is a flat
     /// cap the host has chosen by hand.
     /// </summary>
-    public int EnemyCap { get; set; } = 1500;
+    /// <summary>
+    /// How many enemies may be alive at once. Defaults to whatever the game allows one player,
+    /// which is the only number any of these machines is known to cope with.
+    ///
+    /// This used to default to a flat 1500, written here and overriding the game's own limit
+    /// entirely. On the host's machine that was survivable; on weaker ones it was nine frames a
+    /// second, and a client that slow cannot keep up with the host, which is what being "in the
+    /// past" is. Nobody asked for five times the mobs -- the request was the opposite, that a
+    /// party face what one player faces, with the difficulty coming from health instead.
+    /// </summary>
+    public int EnemyCap { get; set; } = AutomaticEnemyCap;
 
     /// <summary>The setting value that means "scale it with the party" rather than a fixed number.</summary>
     public const int AutomaticEnemyCap = 0;
@@ -43,9 +53,12 @@ public partial class LobbyScaling
     /// </summary>
     public int ResolveEnemyCap(int players, int singlePlayerCap, int pooledCap)
     {
+        // Automatic means the game's own limit for one player, and deliberately not multiplied
+        // by the party size. Mobs do not scale with players; health does. Multiplying here was
+        // the same per-player scaling that was removed from spawning, wearing a different hat.
         var wanted = EnemyCap != AutomaticEnemyCap
             ? EnemyCap
-            : singlePlayerCap <= 0 ? 1500 : singlePlayerCap * Math.Clamp(players, 1, 5);
+            : singlePlayerCap <= 0 ? 500 : singlePlayerCap;
 
         // Headroom kept free so a boss always has something to be spawned from.
         if (pooledCap > 0) wanted = Math.Min(wanted, Math.Max(100, pooledCap - 25));

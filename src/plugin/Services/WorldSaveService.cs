@@ -208,6 +208,13 @@ namespace MegabonkTogether.Services
                         return false;
                     }
 
+                    var hollow = Common.Persistence.WorldSafety.WhoWasCapturedEmpty(save.Players, lastCheckpoint?.Players);
+                    if (hollow != null)
+                    {
+                        logger.LogWarning($"Co-op checkpoint ({reason}) refused: {hollow} came out with no weapons, items or upgrades, and had them a moment ago. Keeping the previous checkpoint rather than replacing it with an emptier one.");
+                        return false;
+                    }
+
                     store.Write(save);
                     revision = save.Revision;
                     lastCheckpoint = save;
@@ -482,6 +489,22 @@ namespace MegabonkTogether.Services
             worldId = resume.WorldId;
             revision = resume.Revision;
             carriedProgress = resume.Progress;
+
+            // Nobody in a world being continued is "already in this run" yet.
+            //
+            // A checkpoint records who was connected at the moment it was written, and a world is
+            // normally saved while everyone is playing -- so every slot in it says Connected. When
+            // that world is then loaded to continue, OnClientReady sees the flag, decides each
+            // player is already here and that overwriting their live state would be wrong, and
+            // gives nobody anything back. Everyone starts the run blank and picks their upgrades
+            // and items over again, which is precisely what loading a save is supposed to avoid.
+            //
+            // They are all returning players, by definition of having just loaded the world.
+            foreach (var slot in resume.Players)
+            {
+                if (slot != null) slot.Connected = false;
+            }
+            restoredThisSession.Clear();
 
             // The stage reports itself started before its enemy pools and the remote players'
             // inventories exist, so the restore waits for them rather than silently doing nothing.

@@ -165,6 +165,12 @@ namespace MegabonkTogether.Services
             var xpValue = GetPickupXpValue();
 
             Plugin.Log.LogInfo($"[GameBalance] Initialized for {PlayersCount} players, Stage {StageIndex + 1}, Difficulty: {GetDifficultyLevelByPlayers()}");
+
+            // Written down every stage because it is the first thing to check when somebody says
+            // the game is unplayably slow. The mod used to impose a flat 1500 here regardless of
+            // what the game itself allows, which a strong machine survives and a weaker one does
+            // not -- and a machine that cannot keep up also falls behind the host's world.
+            Plugin.Log.LogInfo($"[GameBalance] Mobs at once: {GetMaxEnemiesSpawnable()} (the game allows {SinglePlayerEnemyCap} for one player; the pool holds {PooledEnemyCap}).");
             Plugin.Log.LogInfo($"[GameBalance] Credits Timer Multiplier (Disabled): {creditsMultiplier:F2}x");
             Plugin.Log.LogInfo($"[GameBalance] Basic Enemy HP Base Multiplier: {enemyHpMultiplier:F2}x");
             Plugin.Log.LogInfo($"[GameBalance] Free Chest Spawn Rate Multiplier: {chestSpawnMultiplier:F2}x");

@@ -350,6 +350,26 @@ if (Test-Path -LiteralPath $balance) {
     }
 }
 
+# 23. Loading a world must give everyone their run back. A checkpoint records who was connected
+#     when it was written, and a world saved mid-run marks everyone connected -- so on loading it
+#     OnClientReady decided every player was "already in this run" and restored nobody. Everyone
+#     started blank and re-picked every upgrade and item, which is the opposite of loading a save.
+# 24. And a checkpoint may never replace a better one with an emptier one. A capture taken while
+#     a player's inventory is being rebuilt records them with nothing, and writing that over a
+#     good checkpoint quietly destroys the world.
+$worldSvc = Join-Path $repo 'src/plugin/Services/WorldSaveService.cs'
+if (Test-Path -LiteralPath $worldSvc) {
+    $worldCode = (Get-Content -LiteralPath $worldSvc | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    # Matched on the resume loop and on the call site, not on bare names: a previous version of
+    # this rule matched the helper's own definition and passed against a file with the fix cut out.
+    if ($worldCode -notmatch 'foreach\s*\(var slot in resume\.Players\)[\s\S]{0,200}Connected\s*=\s*false') {
+        $faults += 'WorldSaveService.cs no longer clears Connected on a world being continued, so loading a save restores nobody and everyone re-picks their run.'
+    }
+    if ($worldCode -notmatch 'WhoWasCapturedEmpty\(save') {
+        $faults += 'WorldSaveService.cs no longer refuses a checkpoint that captured a player empty, so a snapshot taken mid-transition can overwrite a good world with a hollow one.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red

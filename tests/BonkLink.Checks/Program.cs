@@ -52,8 +52,15 @@ Check(LobbyScaling.Multiplier(1, defaults.EnemyHealthPerPlayer) == 1f, "one play
 var pooled = new LobbyScaling { EnemyCap = LobbyScaling.AutomaticEnemyCap };
 Check(pooled.ResolveEnemyCap(5, 1500, 800) <= 800 - 25, "automatic scaling never exceeds the enemy pool");
 Check(new LobbyScaling { EnemyCap = 2500 }.ResolveEnemyCap(1, 1500, 800) <= 800 - 25, "a hand-set cap never exceeds the enemy pool either");
-Check(pooled.ResolveEnemyCap(2, 500, 4000) == 1000, "two players get twice one player's mobs when the pool allows it");
+// Mobs do not scale with the party; health does. A flat 1500 here overrode the game's own limit
+// and put weaker machines at nine frames a second, which also puts them behind the host's world.
+Check(pooled.ResolveEnemyCap(2, 500, 4000) == 500, "two players face the same number of mobs as one");
+Check(pooled.ResolveEnemyCap(5, 500, 4000) == 500, "five players face the same number of mobs as one");
 Check(pooled.ResolveEnemyCap(1, 500, 4000) == 500, "one player gets the game's own limit");
+Check(new LobbyScaling().EnemyCap == LobbyScaling.AutomaticEnemyCap,
+    "the mob limit follows the game by default instead of a number written into the mod");
+Check(new LobbyScaling { EnemyCap = 900 }.ResolveEnemyCap(3, 500, 4000) == 900,
+    "a host who deliberately sets a limit still gets exactly that");
 Check(pooled.ResolveEnemyCap(3, 0, 0) >= 100, "an unknown limit still leaves a usable cap");
 Check(pooled.ResolveEnemyCap(5, 1500, 110) >= 100, "a tiny pool still leaves room to play");
 
@@ -556,6 +563,45 @@ if(args.Contains("--public-relay"))
     var carried = lobby!.Players.ToList();
     Check(carried[0].IsChoosing && !carried[1].IsChoosing,
         "the host passes on which players are still choosing and which are done");
+}
+
+// --- Loading a world must give everyone their run back. --------------------------------------
+// A checkpoint records who was connected when it was written, and a world is saved while everyone
+// is playing -- so every slot in a saved world says connected. Read literally at load time that
+// meant "they are already here, leave them alone", and nobody was restored. The owner's own log:
+//   "Nigber was already in this run; leaving their state alone"  (x3, on loading a world)
+{
+    Check(WorldSafety.ShouldRestore(connectedInSave: true, worldWasJustLoaded: true, alreadyRestoredThisSession: false),
+        "loading a world gives a player their run back even though the file says they were connected");
+    Check(WorldSafety.ShouldRestore(connectedInSave: false, worldWasJustLoaded: false, alreadyRestoredThisSession: false),
+        "a player who dropped out mid-run is restored when they come back");
+    Check(!WorldSafety.ShouldRestore(connectedInSave: true, worldWasJustLoaded: false, alreadyRestoredThisSession: false),
+        "a player still in the run is left alone at every stage, not rewound");
+    Check(!WorldSafety.ShouldRestore(connectedInSave: true, worldWasJustLoaded: true, alreadyRestoredThisSession: true),
+        "nobody is restored twice in one session");
+}
+
+// --- A checkpoint may never replace a better one with an emptier one. ------------------------
+// One session wrote "4 players, 0 enemies, 0s; incomplete: inventory for Burger, ..." over a good
+// world. Nobody loses every weapon, item and upgrade at once; that shape means the capture was
+// taken while an inventory was being rebuilt.
+{
+    SavedPlayer Rich(string name) => new()
+    {
+        Name = name, Identity = name,
+        Items = new() { { 1, 2 } },
+        Stats = new() { new SavedModifier { Stat = 1, Operation = 0, Value = 1f } },
+    };
+    SavedPlayer Empty(string name) => new() { Name = name, Identity = name };
+
+    Check(WorldSafety.WhoWasCapturedEmpty(new[] { Empty("Burger") }, new[] { Rich("Burger") }) == "Burger",
+        "a checkpoint that empties a player who had things is refused");
+    Check(WorldSafety.WhoWasCapturedEmpty(new[] { Rich("Burger") }, new[] { Rich("Burger") }) == null,
+        "an ordinary checkpoint is written");
+    Check(WorldSafety.WhoWasCapturedEmpty(new[] { Empty("Newcomer") }, new[] { Rich("Burger") }) == null,
+        "somebody who has genuinely just joined with nothing does not block a checkpoint");
+    Check(WorldSafety.WhoWasCapturedEmpty(new[] { Empty("Burger") }, null) == null,
+        "the very first checkpoint of a world is never refused");
 }
 
 Console.WriteLine($"{passed} checks passed");
