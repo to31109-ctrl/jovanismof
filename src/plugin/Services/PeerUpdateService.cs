@@ -87,7 +87,19 @@ namespace MegabonkTogether.Services
                 if (!InPrivateRoom) return;
                 if (peer == null) return;
                 if (string.IsNullOrEmpty(theirVersion)) return;  // an older build that cannot say
-                if (!IsNewer(OwnVersion, theirVersion)) return;
+
+                // A build up to 5.4.0 answers "an update is waiting" by refusing the player's
+                // input, which would leave this player able to walk but unable to jump, interact
+                // or open the pause menu for the rest of the session. Their launcher updates
+                // them before the game starts next time; that is the right path for them.
+                if (!PeerUpdateRules.MayOffer(OwnVersion, theirVersion))
+                {
+                    if (IsNewer(OwnVersion, theirVersion))
+                    {
+                        logger.LogInfo($"Not offering build {OwnVersion} to a player on {theirVersion}: that build would lock their controls on being told. Their launcher will update them.");
+                    }
+                    return;
+                }
 
                 var archive = BuildOwnArchive();
                 if (archive == null || archive.Length == 0) return;

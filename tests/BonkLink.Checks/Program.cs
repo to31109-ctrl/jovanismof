@@ -517,6 +517,24 @@ if(args.Contains("--public-relay"))
     Check(reported!.Stats.Single().Value == 4f, "a player reporting their stat upgrades survives a round trip");
 }
 
+// --- Handing a build to a player must never cost them their controls. ------------------------
+// Being told an update is waiting is what every build up to 5.4.0 answers by refusing input, so
+// offering one the host's build leaves them walking but unable to jump, interact or pause.
+{
+    Check(!MegabonkTogether.Common.PeerUpdateRules.MayOffer("5.4.1", "5.4.0"),
+        "a player on a build that would lock their controls is not offered one");
+    Check(!MegabonkTogether.Common.PeerUpdateRules.MayOffer("5.5.0", "5.3.1"),
+        "an even older player is not offered one either");
+    Check(!MegabonkTogether.Common.PeerUpdateRules.MayOffer("5.5.0", ""),
+        "a player who does not say what they run is left alone");
+    Check(!MegabonkTogether.Common.PeerUpdateRules.MayOffer("5.4.1", "5.4.1"),
+        "a player already on the host's build is not offered it");
+    Check(!MegabonkTogether.Common.PeerUpdateRules.MayOffer("5.4.1", "5.5.0"),
+        "a player on a newer build than the host is not offered the host's");
+    Check(MegabonkTogether.Common.PeerUpdateRules.MayOffer("5.5.0", "5.4.1"),
+        "a player on a build that takes the news calmly is still offered one");
+}
+
 Console.WriteLine($"{passed} checks passed");
 
 sealed class FakeSocket(byte[] bytes,int fragment,WebSocketMessageType type=WebSocketMessageType.Binary):WebSocket
