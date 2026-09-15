@@ -71,6 +71,60 @@ namespace MegabonkTogether.Scripts
             isGameStarted = false;
         }
 
+        private float stuckForSeconds;
+
+        /// <summary>
+        /// Notices the one state that should be impossible -- the world running, no choice on
+        /// screen, and the player still unable to move -- and puts it right.
+        ///
+        /// A player who had already chosen could be left exactly there: everything moving
+        /// around them, nothing to click, and no way to act. Whatever leads to it, being
+        /// stranded for the rest of the run is the worst outcome available, so this clears it
+        /// rather than waiting to find every cause.
+        /// </summary>
+        private void RecoverFromAStuckChoice()
+        {
+            try
+            {
+                if (!synchronizationService.HasNetplaySessionStarted()) { stuckForSeconds = 0f; return; }
+
+                var player = GameManager.Instance?.player;
+                if (player?.playerInput == null) { stuckForSeconds = 0f; return; }
+
+                var windows = UiManager.Instance?.encounterWindows;
+                var choiceOnScreen = windows != null
+                    && (windows.encounterInProgress
+                        || (windows.activeEncounterWindow != null && windows.activeEncounterWindow.gameObject.activeInHierarchy));
+
+                // A choice being up, or time being stopped, are both perfectly normal.
+                if (choiceOnScreen || Time.timeScale == 0f || WindowManager.HasOpenWindow() || player.playerInput.CanInput())
+                {
+                    stuckForSeconds = 0f;
+                    return;
+                }
+
+                stuckForSeconds += Time.unscaledDeltaTime;
+                if (stuckForSeconds < 3f) return;
+                stuckForSeconds = 0f;
+
+                Plugin.Log.LogWarning("This player has been unable to act with nothing on screen and the world running; clearing the leftover choice state.");
+
+                if (windows != null)
+                {
+                    windows.encounterInProgress = false;
+                    if (windows.activeEncounterWindow != null) windows.activeEncounterWindow.gameObject.SetActive(false);
+                }
+
+                Assets.Scripts.Utility.MyTime.Unpause();
+                MegabonkTogether.Helpers.ScreenTextHelper.Show("", new Vector2(0, -350));
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not clear a stuck choice: {ex.Message}");
+                stuckForSeconds = 0f;
+            }
+        }
+
         private float sinceStatsChecked;
         private int lastReportedStatSignature;
 
@@ -175,6 +229,7 @@ namespace MegabonkTogether.Scripts
                 if (SnapshotSchedule.Due(ref lobbyUpdateAccumulator, Time.unscaledDeltaTime, lobbyUpdatetickInterval))
                     udpClientService.Update();
                 ReportOwnStatsIfChanged();
+                RecoverFromAStuckChoice();
 
                 if (isHost && isGameStarted)
                 {

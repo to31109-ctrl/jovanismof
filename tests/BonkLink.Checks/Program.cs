@@ -25,6 +25,11 @@ for (var count = 1; count <= 5; count++)
 Check(LobbyScaling.Multiplier(5, 0f) == 1f, "host can disable player scaling");
 Check(LobbyScaling.Multiplier(3, .5f) == 2f, "custom 50 percent scaling gives 2x for three players");
 Check(!new LobbyScaling { SpawnsPerPlayer = float.NaN }.IsValid(), "invalid lobby scaling is rejected");
+// A party now faces the number of mobs a single player does. Adding mobs per player multiplied
+// with the health scaling and with the pool the game allocates, and was asked to be removed.
+var defaults = new LobbyScaling();
+Check(defaults.SpawnsPerPlayer == 0f, "a party does not get extra mobs for having more players");
+Check(LobbyScaling.Multiplier(5, defaults.SpawnsPerPlayer) == 1f, "five players face a single player's mob count");
 // The game reuses enemies from a fixed pool. Going past it makes it recycle enemies that are
 // still alive, which is enemies teleporting around the map and bosses with nothing to spawn
 // from. Nothing the host can set may exceed what the game actually allocated.

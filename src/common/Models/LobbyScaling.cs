@@ -11,7 +11,12 @@ public partial class LobbyScaling
     // the scaling panel, and +100% across the board reproduces the old behaviour.
     public float EnemyHealthPerPlayer { get; set; } = 0.35f;
     public float BossHealthPerPlayer { get; set; } = 0.5f;
-    public float SpawnsPerPlayer { get; set; } = 0.5f;
+    /// <summary>
+    /// Extra mobs per additional player. Zero: a party faces the same number a single player
+    /// does. Adding mobs per player multiplied with the health scaling and with the enemy pool,
+    /// and the owner asked for it gone rather than tuned.
+    /// </summary>
+    public float SpawnsPerPlayer { get; set; } = 0f;
     /// <summary>
     /// Zero means "however many the game itself allows for one player, once per player", which
     /// is what a party actually expects: two players, twice the mobs. Any other value is a flat

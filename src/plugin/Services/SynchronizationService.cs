@@ -4544,16 +4544,21 @@ namespace MegabonkTogether.Services
 
         private void OnCloseEncounter()
         {
-            if (UiManager.Instance.encounterWindows.encounterInProgress)
+            // Both halves, always. Taking only the first left the game believing an encounter
+            // was still running: the world ran on around that player while their input stayed
+            // switched off, and nothing afterwards ever turned it back on.
+            try
             {
-                UiManager.Instance.encounterWindows.RewardFinished();
+                var windows = UiManager.Instance?.encounterWindows;
+                if (windows != null && windows.encounterInProgress) windows.RewardFinished();
             }
-            else
+            catch (Exception ex)
             {
-                encounterService.ClearClosedEncounters();
-                MyTime.Unpause();
+                logger.LogWarning($"Finishing the reward window threw: {ex.Message}");
             }
-            //EncounterWindows.A_WindowClosed.Invoke();
+
+            encounterService.ClearClosedEncounters();
+            MyTime.Unpause();
         }
 
         public void OnChangeGold(int amount)

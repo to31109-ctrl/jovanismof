@@ -1555,9 +1555,10 @@ namespace MegabonkTogether.Scripts
                 v => scalingDraft.EnemyHealthPerPlayer = v, false);
             CreateScalingRow("Boss HP per extra player", 65, () => scalingDraft.BossHealthPerPlayer,
                 v => scalingDraft.BossHealthPerPlayer = v, false);
-            CreateScalingRow("Extra mobs per extra player", 5, () => scalingDraft.SpawnsPerPlayer,
-                v => scalingDraft.SpawnsPerPlayer = v, false);
-            CreateScalingRow("Maximum active mobs", -55, () => scalingDraft.EnemyCap,
+            // No row for extra mobs per player: the owner asked for that scaling removed, so
+            // there is nothing to set. The cap below is still worth having, because it is what
+            // keeps the count inside the pool the game allocates.
+            CreateScalingRow("Maximum active mobs", 5, () => scalingDraft.EnemyCap,
                 v => scalingDraft.EnemyCap = (int)v, true);
             CreateScalingButton("Create lobby", -135, () =>
             {
