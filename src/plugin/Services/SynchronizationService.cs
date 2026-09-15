@@ -297,6 +297,8 @@ namespace MegabonkTogether.Services
             // A hold must never outlive the session it was made in: frozen with no host left to
             // unfreeze you is not a state anybody can get out of.
             Patches.CoopPause.Clear();
+            Patches.ChoiceSlowMotion.Reset();
+            Patches.ChestPurchases.ReplayShieldUntil = 0f;
             toSpawns.Clear();
             toUpdate.Clear();
 
@@ -2501,7 +2503,6 @@ namespace MegabonkTogether.Services
                 if (IsSharedExperienceEnabled())
                 {
                     PauseForSharedReward();
-                    ScreenTextHelper.Show("Waiting for other player(s) choices...", new Vector2(0, -350));
                     RewardFinished();
                 }
                 else
@@ -2516,6 +2517,13 @@ namespace MegabonkTogether.Services
             Plugin.CAN_SEND_MESSAGES = false;
             try
             {
+                // Replaying someone else's interaction must never cost this player gold.
+                // The buyer paid on their own machine; this machine replays for the reward
+                // alone. Twenty seconds covers the replay itself and any window it opens.
+                // See ChestPurchases.ReplayShieldUntil.
+                try { Patches.ChestPurchases.ReplayShieldUntil = UnityEngine.Time.unscaledTime + 20f; }
+                catch (Exception ex) { logger.LogWarning($"Could not arm the replay gold shield: {ex.Message}"); }
+
             switch (used.Action)
             {
                 case InteractableAction.Destroy:
@@ -2540,7 +2548,6 @@ namespace MegabonkTogether.Services
                             microwave.Interact();
                             PauseForSharedReward();
                             RewardFinished();
-                            ScreenTextHelper.Show("Waiting for other player(s) choices in Microwave...", new Vector2(0, -350));
                             break;
                         }
 
@@ -2550,7 +2557,6 @@ namespace MegabonkTogether.Services
                         {
                             PauseForSharedReward();
                             RewardFinished();
-                            ScreenTextHelper.Show("Waiting for other player(s) choices in Microwave...", new Vector2(0, -350));
                         }
                         else
                         {
@@ -2566,7 +2572,6 @@ namespace MegabonkTogether.Services
                         {
                             PauseForSharedReward();
                             RewardFinished();
-                            ScreenTextHelper.Show("Waiting for other player(s) choices in Balance Shrine...", new Vector2(0, -350));
                         }
                         else
                         {
@@ -2582,7 +2587,6 @@ namespace MegabonkTogether.Services
                         {
                             PauseForSharedReward();
                             RewardFinished();
-                            ScreenTextHelper.Show("Waiting for other player(s) choices in Moai Shrine...", new Vector2(0, -350));
                         }
                         else
                         {
@@ -2598,7 +2602,6 @@ namespace MegabonkTogether.Services
                         {
                             PauseForSharedReward();
                             RewardFinished();
-                            ScreenTextHelper.Show("Waiting for other player(s) choices in Chest...", new Vector2(0, -350));
                         }
                         else
                         {
@@ -2623,7 +2626,6 @@ namespace MegabonkTogether.Services
                         {
                             PauseForSharedReward();
                             RewardFinished();
-                            ScreenTextHelper.Show("Waiting for other player(s) choices with Shady Guy...", new Vector2(0, -350));
                         }
                         else
                         {
@@ -4493,9 +4495,9 @@ namespace MegabonkTogether.Services
         }
 
         /// <summary>
-        /// BonkLink edition, 2026-09-13: pause every screen for a shared reward, but first close
-        /// this player's pause or settings screen. Freezing the world underneath an open settings
-        /// menu left that player unable to act, and the party waiting on a choice they could not make.
+        /// BonkLink edition, 2026-09-13: clears this player's pause or settings screen so a
+        /// reward is not offered underneath one. It no longer stops the world -- see
+        /// ChoiceSlowMotion for why nothing does.
         /// </summary>
         private void PauseForSharedReward()
         {
@@ -4522,7 +4524,8 @@ namespace MegabonkTogether.Services
                 logger.LogWarning($"Could not close the pause screen before a shared reward: {ex.Message}");
             }
 
-            MyTime.Pause();
+            // The world is no longer stopped for a reward; it is slowed while the choice is on
+            // screen and runs on regardless of how long anybody takes. See ChoiceSlowMotion.
         }
 
         public void RewardFinished()

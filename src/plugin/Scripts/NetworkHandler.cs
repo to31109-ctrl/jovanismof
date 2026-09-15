@@ -268,6 +268,7 @@ namespace MegabonkTogether.Scripts
                 Step("recovering from a stuck choice", RecoverFromAStuckChoice);
                 Step("keeping a choice off the keyboard", KeepChoiceOffTheKeyboard);
                 Step("clearing a stale waiting notice", Patches.SpawnPlayerPortalPatches.ClearStaleWaitNotice);
+                Step("slowing the world for a choice", Patches.ChoiceSlowMotion.Tick);
 
                 if (isHost && isGameStarted)
                 {

@@ -36,6 +36,9 @@ namespace MegabonkTogether.Common.Models
         // BonkLink edition: every permanent stat upgrade this player holds. The host cannot read
         // these off a remote player's mirrored inventory, so the player reports them instead.
         public List<Persistence.SavedModifier> Stats { get; set; } = new();
+        // BonkLink edition, 2026-09-15: this player has an upgrade choice on screen. The world
+        // runs slowly while anyone in the party does.
+        public bool IsChoosing { get; set; }
 
     }
 }

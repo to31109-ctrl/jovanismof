@@ -31,6 +31,10 @@ namespace MegabonkTogether.Common.Messages
         public int Banishes { get; set; }
         public int Refreshes { get; set; }
         public int Skips { get; set; }
+        // BonkLink edition, 2026-09-15: whether this player has an upgrade choice on screen
+        // right now. Sent every tick as plain state rather than announced once when it changes:
+        // a one-off "I am done" that goes missing is exactly what used to strand a whole party.
+        public bool IsChoosing { get; set; }
     }
 
     [MemoryPackable]

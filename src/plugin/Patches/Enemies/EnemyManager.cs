@@ -110,34 +110,7 @@ namespace MegabonkTogether.Patches.Enemies
             var isServer = synchronizationService.IsServerMode() ?? false;
             if (isServer)
             {
-                ApplyLobbyHealthScaling(__result, flag);
                 synchronizationService.OnSpawnedEnemy(__result, enemyData.enemyName, pos, waveNumber, forceSpawn, flag, canBeElite, extraSizeMultiplier);
-            }
-        }
-
-        /// <summary>
-        /// Applies the host's per-extra-player health scaling. A restored checkpoint overwrites
-        /// health immediately afterwards, so a resumed enemy keeps the health it was saved with
-        /// rather than being scaled a second time.
-        /// </summary>
-        private static void ApplyLobbyHealthScaling(Enemy enemy, EEnemyFlag flag)
-        {
-            try
-            {
-                var multiplier = gameBalanceService.GetEnemyHpMultiplier(flag);
-                if (!float.IsFinite(multiplier) || multiplier <= 1.0001f) return;
-
-                var scaled = enemy.hp * multiplier;
-                if (!float.IsFinite(scaled) || scaled <= 0) return;
-
-                enemy.hp = scaled;
-                enemy.maxHp = scaled;
-                enemy.controlHp = scaled;
-                enemy._hp_k__BackingField = scaled;
-            }
-            catch (System.Exception ex)
-            {
-                Plugin.Log.LogWarning($"Could not scale enemy health for the lobby: {ex.Message}");
             }
         }
 

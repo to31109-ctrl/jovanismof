@@ -36,9 +36,24 @@ namespace MegabonkTogether.Patches.Inventories
         /// </summary>
         [HarmonyPrefix]
         [HarmonyPatch(nameof(PlayerInventory.ChangeGold))]
-        public static void ChangeGold_Prefix(PlayerInventory __instance, out int __state)
+        public static bool ChangeGold_Prefix(PlayerInventory __instance, int amount, out int __state)
         {
             __state = __instance.goldInt;
+
+            // A replayed interaction must never take gold off a player who did not make it.
+            // Only the buyer pays, on their own machine; everyone else replays the interaction
+            // for the reward alone. Skipped whole, so the wallet, the HUD and the network never
+            // see a debit that was never a purchase.
+            if (amount < 0
+                && __instance == GameManager.Instance?.player?.inventory
+                && synchronizationService.HasNetplaySessionStarted()
+                && UnityEngine.Time.unscaledTime < ChestPurchases.ReplayShieldUntil)
+            {
+                Plugin.Log.LogWarning($"Blocked a replayed debit of {-amount}g on a wallet holding {__instance.goldInt}g; only the buyer pays.");
+                return false;
+            }
+
+            return true;
         }
 
         [HarmonyPostfix]

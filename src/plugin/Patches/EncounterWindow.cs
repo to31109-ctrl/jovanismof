@@ -41,14 +41,11 @@ namespace MegabonkTogether.Patches
             // nothing on screen to pick.
             if (synchronizationService.IsSharedExperienceEnabled()) CloseScreensBlockingAChoice();
 
+            // A dead player has no choice to make. They used to stop their own world and tell
+            // everyone they were waiting; nobody waits for anybody now, so this just declines
+            // the reward and leaves the run alone.
             if (GameManager.Instance.player.IsDead())
             {
-                if (synchronizationService.IsSharedExperienceEnabled())
-                {
-                    MyTime.Pause();
-                    ScreenTextHelper.Show("Waiting for other player(s) choices...", new Vector2(0, -350));
-                    synchronizationService.RewardFinished();
-                }
                 return false;
             }
 
@@ -80,12 +77,6 @@ namespace MegabonkTogether.Patches
 
             if (GameManager.Instance.player.IsDead())
             {
-                if (synchronizationService.IsSharedExperienceEnabled())
-                {
-                    MyTime.Pause();
-                    synchronizationService.RewardFinished();
-                    ScreenTextHelper.Show("Waiting for other player(s) choices...", new Vector2(0, -350));
-                }
                 return false;
             }
 
@@ -136,15 +127,10 @@ namespace MegabonkTogether.Patches
                 return;
             }
 
-            if (synchronizationService.IsSharedExperienceEnabled())
-            {
-                // A choice window is going up over a world that is about to freeze. Anything
-                // the player already had open -- settings, most often -- stays on top of it and
-                // cannot be dismissed once time stops, which strands them and leaves the rest
-                // of the party waiting on a choice they are unable to reach.
-                UiManager.Instance.encounterWindows?.activeEncounterWindow?.gameObject.SetActive(true);
-                return;
-            }
+            // The choice window goes up over a world that keeps running, slowed rather than
+            // stopped. Whatever the player had open is theirs to close in their own time; it can
+            // no longer strand them, because nothing is frozen underneath it.
+            UiManager.Instance.encounterWindows?.activeEncounterWindow?.gameObject.SetActive(true);
 
             MyTime.Unpause();
         }
@@ -182,48 +168,26 @@ namespace MegabonkTogether.Patches
 
 
         /// <summary>
-        /// Synchronize end of reward. This is needed on shared experience to unblock the game for all players
+        /// Taking an upgrade now simply finishes, for everyone, every time.
+        ///
+        /// This used to hide the player's window, tell the host they were done and put
+        /// "Waiting for other player(s) choices..." on screen until the last player had picked.
+        /// Holding a party on the slowest member is what stranded people: any choice that failed
+        /// to register left everybody else with a frozen world and nothing to click. The world is
+        /// slowed while choosing instead, so there is nothing left to release and nobody to wait
+        /// for.
         /// </summary>
         [HarmonyPrefix]
         [HarmonyPatch(nameof(EncounterWindows.RewardFinished))]
-        public static bool RewardFinished_Prefix(EncounterWindows __instance)
+        public static void RewardFinished_Prefix()
         {
             if (!synchronizationService.HasNetplaySessionStarted())
             {
-                return true;
+                return;
             }
 
-            if (!synchronizationService.IsSharedExperienceEnabled())
-            {
-                return true;
-            }
-
-            var currentQueue = __instance.rewardQueue;
-            if (currentQueue.Count > 0) //Keep popping reward until queue is empty
-            {
-                return true;
-            }
-
-            if (encounterService.IsClosable())
-            {
-                ScreenTextHelper.Clear();
-                encounterService.ClearClosedEncounters();
-                return true;
-            }
-
-            synchronizationService.RewardFinished();
-
-            var ui = UiManager.Instance;
-            ui.encounterWindows?.activeEncounterWindow?.gameObject.SetActive(false);
-
-            foreach (var particles in Il2CppFindHelper.RuntimeGetComponentsInChildren<UIParticleRenderer>(ui))
-            {
-                particles.enabled = false;
-            }
-
-            ScreenTextHelper.Show("Waiting for other player(s) choices...", new Vector2(0, -350));
-
-            return false;
+            ScreenTextHelper.Clear();
+            encounterService.ClearClosedEncounters();
         }
     }
 }

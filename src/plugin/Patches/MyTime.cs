@@ -27,11 +27,11 @@ namespace MegabonkTogether.Patches
                 return true;
             }
 
-            if (synchronizationService.IsSharedExperienceEnabled())
-            {
-                return true;
-            }
-
+            // Shared sessions used to be allowed to stop the world so everybody could be held
+            // on a level-up choice. That is the single thing this mod has got wrong most often:
+            // a stopped world is a world somebody can be stranded in, and every fix for it has
+            // been another way of noticing the player is stuck. The world now slows for a choice
+            // instead -- see ChoiceSlowMotion -- and nothing stops it.
             return false;
         }
 

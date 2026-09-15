@@ -905,6 +905,7 @@ namespace MegabonkTogether.Services
                         playerToUpdate.Inventory = playerUpdate.Inventory;
                         playerToUpdate.Name = playerUpdate.Name;
                         playerToUpdate.Gold = playerUpdate.Gold;
+                        playerToUpdate.IsChoosing = playerUpdate.IsChoosing;
                         playerToUpdate.Xp = playerUpdate.Xp;
                         playerToUpdate.Level = playerUpdate.Level;
                         playerToUpdate.Overheal = playerUpdate.Overheal;
@@ -1410,6 +1411,7 @@ namespace MegabonkTogether.Services
             //player.Xp = localPlayer.Xp;
             player.Inventory = localPlayer.Inventory;
             player.Name = localPlayer.Name;
+            player.IsChoosing = localPlayer.IsChoosing;
 
             playerManagerService.UpdatePlayer(player);
         }

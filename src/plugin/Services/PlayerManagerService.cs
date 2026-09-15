@@ -438,6 +438,7 @@ namespace MegabonkTogether.Services
                 Banishes = player.inventory.banishes,
                 Refreshes = player.inventory.refreshes,
                 Skips = player.inventory.skips,
+                IsChoosing = Patches.ChoiceSlowMotion.IsLocalChoiceOnScreen(),
                 Inventory = player.inventory.ToInventoryInfos(),
                 Name = Configuration.ModConfig.PlayerName.Value
             };

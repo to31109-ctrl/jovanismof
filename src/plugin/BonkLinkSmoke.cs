@@ -59,6 +59,9 @@ public class BonkLinkSmoke : MonoBehaviour
     private float coffinAt;
     private bool worldSaveChecked;
     private int walletProbeStep;
+    private bool choiceXpSent;
+    private bool shieldProbeSent;
+    private float lastChoiceReport;
 
     private void DriveWalletProbe(bool host, float liveSeconds)
     {
@@ -275,6 +278,10 @@ public class BonkLinkSmoke : MonoBehaviour
                         pauseUiChecked = true;
                         CheckPauseUi();
                     }
+                    if (args.Contains("--bonklink.choicetest"))
+                    {
+                        DriveChoiceProbe(host, elapsed - liveAt);
+                    }
                     if (client && (requiredPlayers == 2 || args.Contains("--bonklink.revive")) && !deathSent && elapsed - liveAt > 40)
                     {
                         deathSent = true;
@@ -316,6 +323,39 @@ public class BonkLinkSmoke : MonoBehaviour
         var patches = Harmony.GetAllPatchedMethods().Count(m => Harmony.GetPatchInfo(m)?.Owners.Contains(MyPluginInfo.PLUGIN_GUID) == true);
         Plugin.Log.LogInfo($"BONKLINK_SMOKE_OK: Update reached; {patches} patched methods; network handler present={Plugin.Instance.NetworkHandler != null}");
         Application.Quit();
+    }
+
+    /// <summary>
+    /// Test-only probe for the no-freeze choice work (BONKLINK_TESTING builds never ship).
+    /// Forces a level-up choice on this player so the world must slow for it, then proves a
+    /// replayed debit cannot touch the wallet. Nothing here clicks anything: the choice stays
+    /// open, which is exactly the state that used to strand a party.
+    /// </summary>
+    private void DriveChoiceProbe(bool host, float liveSeconds)
+    {
+        var inventory = GameManager.Instance.player.inventory;
+        if (!choiceXpSent && liveSeconds > 10)
+        {
+            choiceXpSent = true;
+            Plugin.Log.LogInfo($"BONKLINK_CHOICE_XP: granting XP to force a level-up choice (host={host})");
+            inventory.playerXp.AddXp(10000);
+        }
+        if (!shieldProbeSent && liveSeconds > 20)
+        {
+            shieldProbeSent = true;
+            var before = inventory.goldInt;
+            // Pretend a chest replay just happened, then attempt the exact debit one used to cause.
+            MegabonkTogether.Patches.ChestPurchases.ReplayShieldUntil = UnityEngine.Time.unscaledTime + 30f;
+            inventory.ChangeGold(-50);
+            var after = inventory.goldInt;
+            Plugin.Log.LogInfo($"BONKLINK_SHIELD_PROBE: before={before} after={after} pass={before == after}");
+        }
+        if (liveSeconds > 25 && liveSeconds - lastChoiceReport > 10)
+        {
+            lastChoiceReport = liveSeconds;
+            var choosing = MegabonkTogether.Patches.ChoiceSlowMotion.IsLocalChoiceOnScreen();
+            Plugin.Log.LogInfo($"BONKLINK_CHOICE_STATE: choosing={choosing} timeScale={UnityEngine.Time.timeScale}");
+        }
     }
 
     /// <summary>
