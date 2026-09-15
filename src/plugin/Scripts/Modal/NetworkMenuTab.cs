@@ -1557,11 +1557,11 @@ namespace MegabonkTogether.Scripts
                 v => scalingDraft.EnemyHealthPerPlayer = v, false);
             CreateScalingRow("Boss HP per extra player", 65, () => scalingDraft.BossHealthPerPlayer,
                 v => scalingDraft.BossHealthPerPlayer = v, false);
-            // No row for extra mobs per player: the owner asked for that scaling removed, so
-            // there is nothing to set. The cap below is still worth having, because it is what
-            // keeps the count inside the pool the game allocates.
-            CreateScalingRow("Maximum active mobs", 5, () => scalingDraft.EnemyCap,
-                v => scalingDraft.EnemyCap = (int)v, true);
+            // No row for extra mobs per player, and none for the mob limit either. The number of
+            // mobs is the game's own, exactly as in single player, and is not something a host
+            // sets: raising it above what the game expects is what put weaker machines at nine
+            // frames a second, and a machine that slow also falls behind everyone else's world.
+            // Difficulty comes from the health rows above, which do scale with the party.
             CreateScalingButton("Create lobby", -135, () =>
             {
                 Plugin.Instance.Mode.Scaling = scalingDraft;

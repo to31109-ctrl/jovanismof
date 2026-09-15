@@ -150,8 +150,15 @@ namespace MegabonkTogether.Patches.Enemies
         }
 
         /// <summary>
-        /// When Max limit is reached, enemies will start being less aggressive.
-        /// This is an attempt to prevent that
+        /// Tells the game the limit is whatever this lobby actually allows, so enemies do not go
+        /// passive once the map is fuller than the game expects.
+        ///
+        /// This used to answer a flat 1000 whatever the session was doing. That existed because
+        /// the mod raised the mob count far above the game's own limit and the game responded by
+        /// making enemies less aggressive. The mob count now follows the game's own number, and
+        /// when those two agree there is nothing to correct: the answer is the game's own and the
+        /// session behaves exactly like single player. Only a lobby that has deliberately raised
+        /// the limit is told anything different, and then only the truth about its own limit.
         /// </summary>
         [HarmonyPostfix]
         [HarmonyPatch(nameof(EnemyManager.GetNumMaxEnemies))]
@@ -162,12 +169,18 @@ namespace MegabonkTogether.Patches.Enemies
                 return;
             }
 
-            // Asked by the mod rather than by the game: answer honestly.
+            // Asked by the mod rather than by the game: answer honestly, and do not recurse.
             if (AskingTheGameDirectly) return;
 
-            __result = 1000; //Bait the game to keep monster aggressive; TODO: is it really working ?
-
-            //Plugin.Log.LogInfo($"GetNumMaxEnemies: {__instance.numEnemies} / {__result} ");
+            try
+            {
+                var allowed = gameBalanceService.GetMaxEnemiesSpawnable();
+                if (allowed > __result) __result = allowed;
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not work out this lobby's mob limit: {ex.Message}");
+            }
         }
     }
 }

@@ -370,6 +370,24 @@ if (Test-Path -LiteralPath $worldSvc) {
     }
 }
 
+# 25. The number of mobs is the game's own and is not a setting. Raising it above what the game
+#     expects put weaker machines at nine frames a second, and a machine that slow falls behind
+#     everyone else's world. Difficulty comes from health, which scales with the party.
+$menuFile = Join-Path $repo 'src/plugin/Scripts/Modal/NetworkMenuTab.cs'
+if (Test-Path -LiteralPath $menuFile) {
+    $menuCode = (Get-Content -LiteralPath $menuFile | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    if ($menuCode -match 'scalingDraft\.EnemyCap') {
+        $faults += 'NetworkMenuTab.cs offers the mob limit as a setting again. It is the game''s own number; raising it is what took weaker machines to nine frames a second.'
+    }
+}
+$scalingFile = Join-Path $repo 'src/common/Models/LobbyScaling.cs'
+if (Test-Path -LiteralPath $scalingFile) {
+    $scalingCode = (Get-Content -LiteralPath $scalingFile | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    if ($scalingCode -notmatch 'EnemyCap\s*\{\s*get;\s*set;\s*\}\s*=\s*AutomaticEnemyCap') {
+        $faults += 'LobbyScaling.cs no longer defaults the mob limit to the game''s own number.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red
