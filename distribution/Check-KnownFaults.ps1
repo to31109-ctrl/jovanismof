@@ -309,6 +309,21 @@ if (Test-Path -LiteralPath $saves) {
     }
 }
 
+# 20. A projectile from a weapon this machine has never held must not be able to throw on its
+#     way back to the pool. The pools are keyed by weapon, another player's build brings weapons
+#     this player does not have, and the throw happens after the projectile stops being used and
+#     before it is put away -- so it is never released and never hidden. Two clients logged about
+#     a hundred of these each, stack traces were 62% of everything they wrote, and because BepInEx
+#     writes to disk on the main thread both sat at nine frames a second with their CPU and GPU
+#     at twenty percent. They were not working; they were waiting on a file.
+$pool = Join-Path $repo 'src/plugin/Patches/PoolManager.cs'
+if (Test-Path -LiteralPath $pool) {
+    $poolText = Get-Content -Raw -LiteralPath $pool
+    if ($poolText -notmatch 'HarmonyFinalizer' -or $poolText -notmatch 'ReturnProjectile') {
+        $faults += 'PoolManager.cs no longer catches a projectile the game cannot pool. Each one leaks and writes a stack trace to disk from the main thread, which is what took two clients to nine frames a second.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red
