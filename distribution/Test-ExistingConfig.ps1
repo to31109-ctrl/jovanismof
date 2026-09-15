@@ -49,6 +49,12 @@ PlayerName = daneel
 # Setting type: String
 PlayerIdentity = e161eb0f01d64beba7719172465bd552
 
+[Gameplay]
+
+## Allow game saves during netplay sessions.
+# Setting type: Boolean
+AllowSavesDuringNetplay = false
+
 [Updates]
 
 ## Check for a newer build on launch.
@@ -68,6 +74,7 @@ UpdateRepository =
 $cases = [ordered]@{
     'a real config with the updater off and no repository' = $realConfig
     'no [Updates] section at all' = "[Player]`r`nPlayerName = friend`r`nPlayerIdentity = abc123`r`n"
+    'no [Gameplay] section at all' = "[Player]`r`nPlayerName = friend`r`nPlayerIdentity = abc123`r`n`r`n[Updates]`r`nCheckForUpdates = true`r`n"
     '[Updates] present but empty' = "[Player]`r`nPlayerName = friend`r`nPlayerIdentity = abc123`r`n`r`n[Updates]`r`n"
     '[Updates] before another section, already correct' = "[Updates]`r`nCheckForUpdates = true`r`nUpdateRepository = $expectedRepository`r`n`r`n[Player]`r`nPlayerName = friend`r`nPlayerIdentity = abc123`r`n"
 }
@@ -112,6 +119,12 @@ try {
             Check ($count -eq 1) "$key appears exactly once (found $count)"
         }
         Check ($after -notmatch '(?m)^\[Updates\][\s\S]*^\[Updates\]') '[Updates] is not duplicated'
+
+        # Off, the game writes none of its own progress during a session, so characters people
+        # unlock while playing together are gone the next time they start the game.
+        Check ((Get-SectionValue $after 'Gameplay' 'AllowSavesDuringNetplay') -eq 'true') 'the game is allowed to keep its own progress, inside [Gameplay]'
+        Check ((([regex]::Matches($after, '(?m)^AllowSavesDuringNetplay\s*=')).Count) -eq 1) 'AllowSavesDuringNetplay appears exactly once'
+        Check ($after -notmatch '(?m)^\[Gameplay\][\s\S]*^\[Gameplay\]') '[Gameplay] is not duplicated'
 
         # Losing this makes a host stop recognising the player and hand them a new character.
         if ($before -match 'PlayerIdentity\s*=\s*(\S+)') {

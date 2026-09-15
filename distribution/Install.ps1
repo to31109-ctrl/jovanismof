@@ -79,7 +79,7 @@ Enabled = true
         @"
 [Gameplay]
 EnabledSharedExperience = true
-AllowSavesDuringNetplay = false
+AllowSavesDuringNetplay = true
 [Updates]
 CheckForUpdates = true
 UpdateRepository = $updateRepository
@@ -89,6 +89,22 @@ PreviousVersion = 5.1.0
     } elseif ($updateRepository) {
         # Installing this release enables its update feed for existing copies too.
         $config = Get-Content -LiteralPath $configFile -Raw
+        # Anything unlocked while playing co-op was thrown away when the game closed, because
+        # the mod blocked the game from writing its own save during a session. Repaired here so
+        # an existing installation stops losing characters people have earned.
+        $gameplay = [regex]::Match($config, '(?ms)^\[Gameplay\][^\r\n]*\r?\n(?:(?!^\[).)*')
+        if ($gameplay.Success) {
+            $gameplayText = $gameplay.Value
+            if ($gameplayText -match '(?m)^AllowSavesDuringNetplay\s*=') {
+                $gameplayText = [regex]::Replace($gameplayText, '(?m)^AllowSavesDuringNetplay\s*=.*$', 'AllowSavesDuringNetplay = true')
+            } else {
+                $gameplayText = $gameplayText.TrimEnd() + "`r`nAllowSavesDuringNetplay = true`r`n"
+            }
+            $config = $config.Substring(0, $gameplay.Index) + $gameplayText + $config.Substring($gameplay.Index + $gameplay.Length)
+        } else {
+            $config = $config.TrimEnd() + "`r`n`r`n[Gameplay]`r`nAllowSavesDuringNetplay = true`r`n"
+        }
+
         foreach ($updateSetting in @(@('UpdateRepository', $updateRepository), @('CheckForUpdates', 'true'))) {
             $sectionPattern = '(?ms)^\[Updates\][^\r\n]*\r?\n(?:(?!^\[).)*'
             $section = [regex]::Match($config, $sectionPattern)

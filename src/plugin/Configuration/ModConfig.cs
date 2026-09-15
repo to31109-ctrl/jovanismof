@@ -77,8 +77,8 @@ namespace MegabonkTogether.Configuration
             AllowSavesDuringNetplay = config.Bind(
                 "Gameplay",
                 "AllowSavesDuringNetplay",
-                false,
-                "Allow game saves during netplay sessions."
+                true,
+                "Let the game keep its own progress while playing co-op: characters you unlock, quests, stats and silver. Switched off, none of that is written while you are in a session, so anything unlocked playing together is gone the next time the game starts. It was off by default to keep co-op from touching single-player progression, which cost players the characters they had earned."
             );
             EnabledSharedExperience = config.Bind(
                 "Gameplay",
