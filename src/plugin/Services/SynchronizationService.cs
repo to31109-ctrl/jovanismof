@@ -299,6 +299,7 @@ namespace MegabonkTogether.Services
             Patches.CoopPause.Clear();
             Patches.ChoiceSlowMotion.Reset();
             Patches.ChestPurchases.ReplayShieldUntil = 0f;
+            Patches.ChestPurchases.OwnPurchaseUntil = 0f;
             toSpawns.Clear();
             toUpdate.Clear();
 

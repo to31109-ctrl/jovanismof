@@ -535,6 +535,29 @@ if(args.Contains("--public-relay"))
         "a player on a build that takes the news calmly is still offered one");
 }
 
+// --- Whether a player is still choosing has to survive the trip. -----------------------------
+// The world stays slow until the last player has taken their upgrade, and that is decided from
+// this one field arriving on every tick. Sent as plain state on purpose: every previous version
+// of this announced "I am done" once, and a single lost announcement stranded the whole party.
+{
+    var update = MemoryPackSerializer.Deserialize<MegabonkTogether.Common.Messages.PlayerUpdate>(
+        MemoryPackSerializer.Serialize(new MegabonkTogether.Common.Messages.PlayerUpdate { ConnectionId = 3, IsChoosing = true }));
+    Check(update!.IsChoosing, "a player says they are still choosing on the way to the host");
+
+    var lobby = MemoryPackSerializer.Deserialize<MegabonkTogether.Common.Messages.LobbyUpdates>(
+        MemoryPackSerializer.Serialize(new MegabonkTogether.Common.Messages.LobbyUpdates
+        {
+            Players = new List<MegabonkTogether.Common.Models.Player>
+            {
+                new() { ConnectionId = 1, IsChoosing = true },
+                new() { ConnectionId = 2, IsChoosing = false },
+            },
+        }));
+    var carried = lobby!.Players.ToList();
+    Check(carried[0].IsChoosing && !carried[1].IsChoosing,
+        "the host passes on which players are still choosing and which are done");
+}
+
 Console.WriteLine($"{passed} checks passed");
 
 sealed class FakeSocket(byte[] bytes,int fragment,WebSocketMessageType type=WebSocketMessageType.Binary):WebSocket

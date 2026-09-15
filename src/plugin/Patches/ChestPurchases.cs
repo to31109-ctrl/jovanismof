@@ -28,6 +28,17 @@ namespace MegabonkTogether.Patches
         /// </summary>
         internal static float ReplayShieldUntil;
 
+        /// <summary>
+        /// While the game's clock is below this, this player pressed the interact key themselves
+        /// and anything they are charged is genuinely theirs to pay.
+        ///
+        /// Without this the shield above was blanket: for twenty seconds after anybody else's
+        /// purchase, nothing cost this player anything. With three players opening chests those
+        /// twenty seconds almost never lapse, so gold stopped meaning anything at all. Their own
+        /// press is what tells the two apart, and it wins.
+        /// </summary>
+        internal static float OwnPurchaseUntil;
+
         [HarmonyPostfix, HarmonyPatch(nameof(InteractableChest.GetPrice))]
         private static void SharedPrice(InteractableChest __instance, ref int __result)
         {

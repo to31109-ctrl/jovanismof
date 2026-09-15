@@ -188,6 +188,75 @@ if (Test-Path -LiteralPath $card) {
     }
 }
 
+# 11. Shielding a player from somebody else's purchase must not also make their own purchases
+#     free. The shield is a twenty-second clock opened by any replayed interaction, and with a
+#     party opening chests it is open almost permanently -- so gold stopped costing anything.
+#     The player's own keypress is what tells the two apart.
+$wallet = Join-Path $repo 'src/plugin/Patches/Inventories/PlayerInventory.cs'
+if (Test-Path -LiteralPath $wallet) {
+    $walletText = Get-Content -Raw -LiteralPath $wallet
+    if ($walletText -match 'ReplayShieldUntil' -and $walletText -notmatch 'OwnPurchaseUntil') {
+        $faults += 'PlayerInventory.cs skips a debit during the replay shield without asking whether this player pressed the key themselves, so their own purchases are free too.'
+    }
+}
+$detect = Join-Path $repo 'src/plugin/Patches/DetectInteractables.cs'
+if (Test-Path -LiteralPath $detect) {
+    $detectText = Get-Content -Raw -LiteralPath $detect
+    if ($detectText -notmatch 'OwnPurchaseUntil\s*=') {
+        $faults += 'DetectInteractables.cs never records that this player pressed the interact key, so the replay shield cannot tell their own purchases from a replayed one.'
+    }
+
+# 12. A player who is briefly untouchable must still be able to use things. That invulnerability
+#     is the game's teleporting flag, which also switches interaction off -- so the interact key
+#     did nothing for most of a run: 181 refusals in one player's log.
+    $guard = [regex]::Match($detectText, 'private static bool CanSynchronize[\s\S]{0,1600}')
+    if (!$guard.Success -or $guard.Value -notmatch 'IS_MANUAL_INVINCIBLE\s*=\s*false') {
+        $faults += 'DetectInteractables.cs no longer gives up the mod-made invulnerability when the player tries to interact, so the interact key does nothing after a level-up.'
+    }
+}
+
+# 13. Nothing but the host's deliberate hold may stop the world during a session. A stopped world
+#     is one a player can be stranded in, and holding a whole party on one player's level-up
+#     choice is the single fault that has come back most often in this mod.
+foreach ($file in $source) {
+    if ($file.Name -eq 'CoopPause.cs' -or $file.Name -eq 'SpawnPlayerPortal.cs' -or $file.Name -eq 'BonkLinkSmoke.cs') { continue }
+    $text = Get-Content -LiteralPath $file.FullName
+    for ($i = 0; $i -lt $text.Count; $i++) {
+        if ($text[$i] -match '^\s*//') { continue }
+        if ($text[$i] -match 'MyTime\.Pause\s*\(\s*\)') {
+            $faults += "$($file.Name):$($i + 1) stops the world mid-session. Slow it instead; see ChoiceSlowMotion."
+        }
+    }
+}
+
+# 14. Lobby health scaling must be applied exactly once. It was applied on the spawn path and
+#     again on the stats path, so a party of three met nine times the health instead of three
+#     and the difficulty never felt like the number of players.
+# Counted only where scaling is actually applied -- the patches -- not where the multiplier is
+# declared or worked out, which is the service.
+$applications = 0
+foreach ($file in ($source | Where-Object { $_.FullName -like '*\Patches\*' })) {
+    $text = Get-Content -LiteralPath $file.FullName
+    for ($i = 0; $i -lt $text.Count; $i++) {
+        if ($text[$i] -match '^\s*(//|///)') { continue }
+        if ($text[$i] -match 'GetEnemyHpMultiplier\s*\(') { $applications++ }
+    }
+}
+if ($applications -ne 1) {
+    $faults += "Lobby health scaling is applied $applications times in the plugin; it must be applied exactly once or the party faces the multiplier squared."
+}
+
+# 15. A level-up choice must not be reachable by the keyboard the moment it opens. A fresh window
+#     selects its skip button, and space is submit, so the jump key threw the upgrade away. The
+#     per-frame sweep cannot run before the frame the window opens on.
+$keys = Join-Path $repo 'src/plugin/Patches/ChoiceWindowKeys.cs'
+if (Test-Path -LiteralPath $keys) {
+    $keysText = Get-Content -Raw -LiteralPath $keys
+    if ($keysText -notmatch 'BaseEncounterWindow\.Open' -or $keysText -notmatch 'SetSelectedGameObject\(null\)') {
+        $faults += 'ChoiceWindowKeys.cs no longer clears the selection as a choice opens, so the jump key can skip an upgrade on the frame it appears.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red

@@ -47,7 +47,12 @@ namespace MegabonkTogether.Patches.Inventories
             if (amount < 0
                 && __instance == GameManager.Instance?.player?.inventory
                 && synchronizationService.HasNetplaySessionStarted()
-                && UnityEngine.Time.unscaledTime < ChestPurchases.ReplayShieldUntil)
+                && UnityEngine.Time.unscaledTime < ChestPurchases.ReplayShieldUntil
+                // ... unless this player pressed the key themselves, in which case the purchase
+                // is theirs and they pay for it. Without this the shield was blanket, and with a
+                // party opening chests it was open almost permanently: nothing cost anybody
+                // anything, which is its own way of ruining a run.
+                && UnityEngine.Time.unscaledTime >= ChestPurchases.OwnPurchaseUntil)
             {
                 Plugin.Log.LogWarning($"Blocked a replayed debit of {-amount}g on a wallet holding {__instance.goldInt}g; only the buyer pays.");
                 return false;

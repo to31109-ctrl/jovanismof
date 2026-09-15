@@ -24,5 +24,36 @@ namespace MegabonkTogether.Patches
             // one. Let the game close it.
             return true;
         }
+
+        /// <summary>
+        /// Takes the choice off the keyboard the instant it appears.
+        ///
+        /// Unity treats space and enter as "submit" on whichever element is selected, and a
+        /// fresh window selects its skip button -- so a tap of the jump key threw the upgrade
+        /// away. There is a sweep every frame that clears the selection, but it cannot run
+        /// before the frame the window opens on, and that one frame was enough: this was
+        /// reported as still happening after that sweep was added.
+        ///
+        /// It matters more now, not less. The world keeps running during a choice, so the
+        /// player is moving and jumping while the window is up rather than standing frozen in
+        /// front of it. The mouse is untouched; only submit-by-keyboard has nothing to press.
+        /// </summary>
+        [HarmonyPostfix]
+        [HarmonyPatch(nameof(BaseEncounterWindow.Open))]
+        private static void Open_Postfix()
+        {
+            try
+            {
+                var events = UnityEngine.EventSystems.EventSystem.current;
+                if (events != null && events.currentSelectedGameObject != null)
+                {
+                    events.SetSelectedGameObject(null);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not take the choice off the keyboard as it opened: {ex.Message}");
+            }
+        }
     }
 }
