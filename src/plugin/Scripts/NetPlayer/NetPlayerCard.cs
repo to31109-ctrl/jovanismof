@@ -76,7 +76,7 @@ namespace MegabonkTogether.Scripts.NetPlayer
             borderRect.sizeDelta = new Vector2(iconSize, iconSize);
 
             var borderImage = iconBorder.AddComponent<Image>();
-            borderImage.color = PlayerColor;
+            borderImage.color = new Color(PlayerColor.r, PlayerColor.g, PlayerColor.b, BorderAlpha);
 
             Icon = Object.Instantiate(iconTemplate, iconBorder.transform);
             Icon.name = $"Icon_{Player.ConnectionId}_{Character}";
@@ -475,19 +475,52 @@ namespace MegabonkTogether.Scripts.NetPlayer
             }
         }
 
+        /// <summary>
+        /// The colour a player is known by: their card border, their minimap icon and the arrow
+        /// pointing at them off the edge of the map.
+        ///
+        /// These used to be half transparent, and one of the six was grey -- so a player could
+        /// be given a grey marker at 50% alpha, which on a minimap is very nearly nothing. Two
+        /// of the others were mistyped into a different colour than intended. Every one is now
+        /// bright and fully opaque; the card border applies its own transparency, which is the
+        /// only place the see-through look was actually wanted.
+        /// </summary>
+        private static readonly Color[] MarkerColors =
+        [
+            new Color(0.20f, 0.85f, 1.00f), // cyan
+            new Color(1.00f, 0.45f, 0.10f), // orange
+            new Color(0.35f, 1.00f, 0.35f), // green
+            new Color(1.00f, 0.30f, 0.85f), // pink
+            new Color(1.00f, 0.88f, 0.20f), // yellow
+            new Color(0.62f, 0.47f, 1.00f), // violet
+        ];
+
+        /// <summary>The transparency the card border always had, kept off the map markers.</summary>
+        private const float BorderAlpha = 0.5f;
+
         private Color GeneratePlayerColor(uint connectionId)
         {
-            Color[] distinctColors =
-            [
-                new Color(Color.cyan.r, Color.cyan.g, Color.cyan.b, 0.5f),
-                new Color(Color.white.r, Color.white.g, Color.white.b, 0.5f),
-                new Color(Color.clear.r, Color.green.g, Color.green.b, 0.5f),
-                new Color(Color.magenta.r, Color.clear.g, Color.clear.b, 0.5f),
-                new Color(Color.blue.r, Color.blue.g, Color.blue.b, 0.5f),
-                new Color(Color.gray.r, Color.gray.g, Color.gray.b, 0.5f),
-            ];
+            // Taken by the player's place in the lobby ordered by connection id, rather than by
+            // the id itself. Every machine then gives the same player the same colour, and two
+            // players can no longer be handed the same one because their ids happened to agree
+            // modulo six.
+            try
+            {
+                var playerManagerService = Plugin.Services.GetService<IPlayerManagerService>();
+                var ordered = playerManagerService?.GetAllPlayers()
+                    .Select(p => p.ConnectionId)
+                    .OrderBy(id => id)
+                    .ToList();
 
-            return distinctColors[connectionId % distinctColors.Length];
+                var index = ordered?.IndexOf(connectionId) ?? -1;
+                if (index >= 0) return MarkerColors[index % MarkerColors.Length];
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not place a player in the lobby order for their colour: {ex.Message}");
+            }
+
+            return MarkerColors[connectionId % MarkerColors.Length];
         }
 
         private void UpdateLatencyPosition()

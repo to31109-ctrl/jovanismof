@@ -125,14 +125,63 @@ namespace MegabonkTogether.Patches
                 Plugin.Log.LogInfo("Lobby is ready, starting the game");
             }
 
-            synchronizationService.TransitionToState(GameEvent.Start);
-            var seed = playerManagerService.GetSeed();
-            MyRandom.random = new Il2CppSystem.Random(seed);
+            // Starting the run is a great deal of work and any of it can fail. It used to run
+            // bare, so a fault there killed this coroutine on the spot and left the notice on
+            // screen for the rest of the session -- while the run itself had already begun, so
+            // the player was walking around behind "Waiting for other players" with no way to
+            // dismiss it. The notice, the pause and the handle are cleared whatever happens.
+            try
+            {
+                synchronizationService.TransitionToState(GameEvent.Start);
+                var seed = playerManagerService.GetSeed();
+                MyRandom.random = new Il2CppSystem.Random(seed);
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogError($"Starting the run after waiting for the lobby failed: {ex}");
+            }
+            finally
+            {
+                HideWaitNotice();
+                WaitForLobbyCoroutine = null;
+                MyTime.Unpause();
+            }
+        }
 
-            synchronizeText.enabled = false;
+        /// <summary>Takes the notice off the screen, whatever state it is in.</summary>
+        private static void HideWaitNotice()
+        {
+            try
+            {
+                if (synchronizeText != null) synchronizeText.enabled = false;
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not hide the waiting notice: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Takes the notice down if it is still up while the player is playing.
+        ///
+        /// Whatever leaves it there, a player being told to wait for people who are already in
+        /// the game with them -- with no way to dismiss it -- is never right, and it hides the
+        /// middle of their screen for the rest of the run. Checked every frame rather than
+        /// fixed at each cause, because it has now come back twice from different directions.
+        /// </summary>
+        internal static void ClearStaleWaitNotice()
+        {
+            if (synchronizeText == null || !synchronizeText.enabled) return;
+
+            // A real wait holds the world still. If the world is running the player is playing,
+            // and telling them to wait for people who are already in the game with them is
+            // simply wrong -- whether the coroutine is still spinning or died on its way out.
+            if (Time.timeScale == 0f) return;
+            if (GameManager.Instance == null || GameManager.Instance.player == null) return;
+
+            Plugin.Log.LogWarning("The 'waiting for other players' notice was still up while the world was running; taking it down.");
+            HideWaitNotice();
             WaitForLobbyCoroutine = null;
-
-            MyTime.Unpause();
         }
     }
 }

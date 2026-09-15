@@ -163,6 +163,31 @@ if (Test-Path -LiteralPath $handler) {
     }
 }
 
+# 10. The colour a player is known by is also their marker on the minimap and the arrow pointing
+#     at them. Half-transparent ones read as grey over the map, and one of the six literally was
+#     grey, so players reported each other as "barely visible" and "not a bright colour".
+$card = Join-Path $repo 'src/plugin/Scripts/NetPlayer/NetPlayerCard.cs'
+if (Test-Path -LiteralPath $card) {
+    $cardText = Get-Content -Raw -LiteralPath $card
+    $palette = [regex]::Match($cardText, 'MarkerColors\s*=\s*\[(?<body>[^\]]*)\]')
+    if (!$palette.Success) {
+        $faults += 'NetPlayerCard.cs no longer declares MarkerColors, so nothing checks the markers are visible.'
+    } else {
+        foreach ($entry in [regex]::Matches($palette.Groups['body'].Value, 'new\s+Color\(([^)]*)\)')) {
+            $parts = $entry.Groups[1].Value -split ',' | ForEach-Object { [double]($_ -replace '[fF]\s*$', '').Trim() }
+            if ($parts.Count -ge 4 -and $parts[3] -lt 1) {
+                $faults += "NetPlayerCard.cs has a see-through player colour ($($entry.Value)); on a minimap that reads as grey."
+            }
+            if ($parts.Count -ge 3) {
+                $spread = ($parts[0..2] | Measure-Object -Maximum -Minimum)
+                if (($spread.Maximum - $spread.Minimum) -lt 0.2) {
+                    $faults += "NetPlayerCard.cs has a colourless player colour ($($entry.Value)); it cannot be told apart on the map."
+                }
+            }
+        }
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red

@@ -443,6 +443,11 @@ namespace MegabonkTogether.Scripts.NetPlayer
                 minimapIcon.transform.localScale = playerIcon.localScale;
 
                 minimapIcon.layer = playerIcon.gameObject.layer;
+
+                // Coloured here as well as when the card appears. The two arrive in either
+                // order, and when the icon came second it used to keep the plain cloned
+                // material for the whole run.
+                UpdateMinimapIconColor();
             }
             catch (System.Exception ex)
             {
@@ -550,14 +555,32 @@ namespace MegabonkTogether.Scripts.NetPlayer
             if (minimapIcon == null) return;
 
             var meshRenderer = minimapIcon.GetComponent<MeshRenderer>();
-            if (meshRenderer != null)
-            {
-                var uiColor = Plugin.Instance.NetPlayersDisplayer.GetPlayerColor(connectionId);
-                var material = new Material(meshRenderer.material);
-                material.color = uiColor;
+            if (meshRenderer == null) return;
 
-                meshRenderer.material = material;
+            var uiColor = Plugin.Instance.NetPlayersDisplayer.GetPlayerColor(connectionId);
+
+            // Always fully opaque. A marker is the one thing on the minimap that has to be
+            // readable at a glance, and a see-through one over the map's own colours reads as
+            // grey -- which is exactly how players described each other's markers.
+            var solid = new Color(uiColor.r, uiColor.g, uiColor.b, 1f);
+
+            var material = new Material(meshRenderer.material);
+            material.color = solid;
+
+            // Not every shader shows plain vertex colour. Setting the named properties as well
+            // covers the lit and unlit materials this icon can be cloned from, and the emission
+            // is what keeps it bright rather than shaded by whatever light the map has.
+            foreach (var property in new[] { "_Color", "_BaseColor", "_UnlitColor", "_TintColor" })
+            {
+                if (material.HasProperty(property)) material.SetColor(property, solid);
             }
+            if (material.HasProperty("_EmissionColor"))
+            {
+                material.EnableKeyword("_EMISSION");
+                material.SetColor("_EmissionColor", solid);
+            }
+
+            meshRenderer.material = material;
         }
 
         public void AddItem(EItem item)
