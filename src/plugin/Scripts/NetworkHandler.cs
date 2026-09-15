@@ -103,6 +103,7 @@ namespace MegabonkTogether.Scripts
         }
 
         private float stuckForSeconds;
+        private float inProgressWithoutAWindow;
 
         /// <summary>
         /// Notices the one state that should be impossible -- the world running, no choice on
@@ -123,12 +124,38 @@ namespace MegabonkTogether.Scripts
                 if (player?.playerInput == null) { stuckForSeconds = 0f; return; }
 
                 var windows = UiManager.Instance?.encounterWindows;
-                var choiceOnScreen = windows != null
-                    && (windows.encounterInProgress
-                        || (windows.activeEncounterWindow != null && windows.activeEncounterWindow.gameObject.activeInHierarchy));
+                var windowVisible = windows?.activeEncounterWindow != null
+                    && windows.activeEncounterWindow.gameObject.activeInHierarchy;
+
+                // An encounter marked in progress with nothing on screen to choose from.
+                //
+                // This is the one that quietly stops level-ups arriving. AddEncounter queues a
+                // reward whenever encounterInProgress is set and LateUpdate only pops the queue
+                // when it is clear, so once that flag sticks -- a window closed by a route that
+                // never called RewardFinished, a fault mid-reward -- every level-up from then on
+                // goes into the queue and none of them ever comes out. The player simply stops
+                // being offered upgrades for the rest of the run and nothing says why.
+                //
+                // The check below used to treat encounterInProgress as proof that a choice was on
+                // screen, so a stuck flag made this watchdog decide all was well for ever. It is
+                // now the thing being watched for.
+                if (windows != null && windows.encounterInProgress && !windowVisible)
+                {
+                    inProgressWithoutAWindow += Time.unscaledDeltaTime;
+                    if (inProgressWithoutAWindow >= 3f)
+                    {
+                        inProgressWithoutAWindow = 0f;
+                        Plugin.Log.LogWarning($"A reward has been marked in progress for three seconds with nothing on screen; clearing it so queued level-ups ({windows.rewardQueue?.Count ?? 0} waiting) can appear.");
+                        windows.encounterInProgress = false;
+                    }
+                }
+                else
+                {
+                    inProgressWithoutAWindow = 0f;
+                }
 
                 // A choice being up, or time being stopped, are both perfectly normal.
-                if (choiceOnScreen || Time.timeScale == 0f || WindowManager.HasOpenWindow() || player.playerInput.CanInput())
+                if (windowVisible || Time.timeScale == 0f || WindowManager.HasOpenWindow() || player.playerInput.CanInput())
                 {
                     stuckForSeconds = 0f;
                     return;

@@ -14,6 +14,8 @@ namespace MegabonkTogether.Services
         public int GetPickupXpValue();
         public void Initialize();
         public int GetMaxEnemiesSpawnable();
+        /// <summary>The hard ceiling: what the game actually allocated. Nothing may pass this.</summary>
+        int GetPooledEnemyCeiling();
         public float GetBossLampRequiredCharge();
     }
 
@@ -38,6 +40,22 @@ namespace MegabonkTogether.Services
         public int GetMaxEnemiesSpawnable() => Scaling.ResolveEnemyCap(PlayersCount, SinglePlayerEnemyCap, PooledEnemyCap);
 
         /// <summary>
+        /// The number of enemies the game has room for, less a little headroom.
+        ///
+        /// Separate from the spawn cap above because two things are allowed past that cap -- a
+        /// boss, and the ghost that lets a downed player back in -- and neither may be allowed
+        /// past *this* one. Going beyond what the game allocated does not fail politely: it
+        /// hands out an enemy that is still alive and in play, which is then torn from where it
+        /// was and rebuilt somewhere else. That is what players describe as enemies flying
+        /// around the map.
+        /// </summary>
+        public int GetPooledEnemyCeiling()
+        {
+            var pooled = PooledEnemyCap;
+            return pooled > 0 ? System.Math.Max(100, pooled - 5) : int.MaxValue;
+        }
+
+        /// <summary>
         /// What the game itself allows on screen for one player. Asked of the game rather than
         /// written down here, so it stays right if a patch changes it.
         /// </summary>
@@ -59,7 +77,16 @@ namespace MegabonkTogether.Services
                 {
                     var manager = EnemyManager.Instance;
                     if (manager == null) return 0;
-                    var native = manager.GetNumMaxEnemies();
+
+                    // Asked without the mod's own answer in the way. This patch replaces the
+                    // game's number with 1000 during a session to keep enemies aggressive, so
+                    // asking normally handed this calculation the mod's own invention and called
+                    // it "what the game allows for one player".
+                    Patches.Enemies.EnemyManagerPatches.AskingTheGameDirectly = true;
+                    int native;
+                    try { native = manager.GetNumMaxEnemies(); }
+                    finally { Patches.Enemies.EnemyManagerPatches.AskingTheGameDirectly = false; }
+
                     return native > 0 ? native : EnemyManager.maxNumEnemiesPooled;
                 }
                 catch { return 0; }

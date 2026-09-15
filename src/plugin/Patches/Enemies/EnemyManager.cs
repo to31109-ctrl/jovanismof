@@ -14,6 +14,13 @@ namespace MegabonkTogether.Patches.Enemies
         private static readonly IEnemyManagerService enemyManagerService = Plugin.Services.GetService<IEnemyManagerService>();
         private static readonly IGameBalanceService gameBalanceService = Plugin.Services.GetService<IGameBalanceService>();
         private static bool spawningExtra;
+
+        /// <summary>
+        /// Set while the mod asks the game its own question, so the answer below is the game's
+        /// and not the mod's. Without it the balance service asked how many enemies one player
+        /// is allowed, and got back the number this patch had just made up.
+        /// </summary>
+        internal static bool AskingTheGameDirectly;
         private static float extraSpawnRemainder;
 
         [HarmonyPostfix]
@@ -54,12 +61,22 @@ namespace MegabonkTogether.Patches.Enemies
                 return false;
             }
 
+            // Two things are allowed past the crowd limit, and neither may be allowed past what
+            // the game actually allocated. Overrunning the pool does not refuse politely -- it
+            // hands back an enemy that is still alive and in play, which is then torn out of the
+            // fight and rebuilt somewhere else. That is what "the mobs fly around" is.
+            var ceiling = gameBalanceService.GetPooledEnemyCeiling();
+
             // The revive ghost goes through this same spawner. Refusing it because the map is
-            // full is how a downed player ends up with no ghost at all and no way back, so it
-            // is always let through: it is one enemy, and it is the whole revive mechanic.
+            // full is how a downed player ends up with no ghost at all and no way back.
+            //
+            // But this used to wave through *every* spawn for as long as a coffin existed, not
+            // just the ghost -- so the entire time somebody was down, nothing was limited at all.
+            // "When those ghosts spawn it gets rough" was that: a downed player quietly switched
+            // the enemy limit off for everyone.
             if (Plugin.Instance != null && Plugin.Instance.CurrentReviver.HasValue)
             {
-                return true;
+                return __instance.numEnemies < ceiling;
             }
 
             // A boss is the stage, not part of the crowd. Counting it against the same limit as
@@ -67,7 +84,7 @@ namespace MegabonkTogether.Patches.Enemies
             // walked into never begins.
             if (flag == EEnemyFlag.Boss || flag == EEnemyFlag.FinalBoss)
             {
-                return true;
+                return __instance.numEnemies < ceiling;
             }
 
             if (!forceSpawn && __instance.numEnemies >= gameBalanceService.GetMaxEnemiesSpawnable())
@@ -144,6 +161,9 @@ namespace MegabonkTogether.Patches.Enemies
             {
                 return;
             }
+
+            // Asked by the mod rather than by the game: answer honestly.
+            if (AskingTheGameDirectly) return;
 
             __result = 1000; //Bait the game to keep monster aggressive; TODO: is it really working ?
 

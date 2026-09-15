@@ -576,7 +576,13 @@ namespace MegabonkTogether.Services
             try
             {
                 if ((IsServerMode() ?? false) == false) return;
+                if (!Configuration.ModConfig.ReviveOnNewArea.Value) return;
 
+                // Deliberately alongside InteractableReviver.ReviveEveryoneWaiting, which runs
+                // on the same event. That one brings back players who still have a coffin
+                // standing; this one catches anybody whose coffin never existed or was cleared
+                // away with the last stage, and it puts them down where the party arrived rather
+                // than where they fell in an area nobody is in any more.
                 var arrival = GameManager.Instance?.player?.transform?.position;
                 if (arrival == null) return;
 

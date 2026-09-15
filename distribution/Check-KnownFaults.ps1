@@ -324,6 +324,32 @@ if (Test-Path -LiteralPath $pool) {
     }
 }
 
+# 21. Nothing may spawn past what the game actually allocated for enemies. Overrunning the pool
+#     hands back an enemy that is still alive and in play, which is then torn out of the fight
+#     and rebuilt elsewhere -- what players describe as mobs flying around the map. Both things
+#     allowed past the crowd limit, a boss and the revive ghost, must still respect the ceiling.
+$enemyMgr = Join-Path $repo 'src/plugin/Patches/Enemies/EnemyManager.cs'
+if (Test-Path -LiteralPath $enemyMgr) {
+    $enemyCode = (Get-Content -LiteralPath $enemyMgr | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    if ($enemyCode -notmatch 'GetPooledEnemyCeiling') {
+        $faults += 'EnemyManager.cs lets a boss or a revive ghost spawn without checking the enemy pool ceiling, which recycles enemies that are still alive.'
+    }
+    if ($enemyCode -match 'CurrentReviver\.HasValue[\s\S]{0,80}return true;') {
+        $faults += 'EnemyManager.cs waves through every spawn while a revive coffin exists, so one downed player switches the enemy limit off for the whole party.'
+    }
+}
+
+# 22. The mod must not read back its own invented numbers. GetNumMaxEnemies is replaced with 1000
+#     during a session to keep enemies aggressive, and the balance service was asking that same
+#     method what the game allows for one player.
+$balance = Join-Path $repo 'src/plugin/Services/GameBalanceService.cs'
+if (Test-Path -LiteralPath $balance) {
+    $balanceCode = (Get-Content -LiteralPath $balance | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    if ($balanceCode -match 'GetNumMaxEnemies' -and $balanceCode -notmatch 'AskingTheGameDirectly') {
+        $faults += 'GameBalanceService.cs asks GetNumMaxEnemies without silencing the mod''s own override, so it reads back a number the mod invented.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red
