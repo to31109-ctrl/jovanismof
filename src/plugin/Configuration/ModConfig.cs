@@ -18,6 +18,8 @@ namespace MegabonkTogether.Configuration
         public static ConfigEntry<bool> ShowChangelog { get; private set; }
         public static ConfigEntry<string> PreviousVersion { get; private set; }
         public static ConfigEntry<bool> AllowSavesDuringNetplay { get; private set; }
+        /// <summary>Records that the one-time repair below has already been applied.</summary>
+        private static ConfigEntry<bool> KeptProgressRepairApplied;
         public static ConfigEntry<bool> EnabledSharedExperience { get; private set; }
         public static ConfigEntry<bool> CoopWorldSaves { get; private set; }
         public static ConfigEntry<bool> ResumeLastWorld { get; private set; }
@@ -80,6 +82,29 @@ namespace MegabonkTogether.Configuration
                 true,
                 "Let the game keep its own progress while playing co-op: characters you unlock, quests, stats and silver. Switched off, none of that is written while you are in a session, so anything unlocked playing together is gone the next time the game starts. It was off by default to keep co-op from touching single-player progression, which cost players the characters they had earned."
             );
+
+            // Changing the default above reaches nobody who already has the mod: their config
+            // file already says false, and an update only replaces the plugin -- it never runs
+            // the installer that would repair the file. Left alone, everyone who had already
+            // installed kept losing every character they unlocked in co-op.
+            //
+            // Done once, and recorded, so anyone who deliberately turns it off again keeps it off.
+            KeptProgressRepairApplied = config.Bind(
+                "Internal",
+                "KeptProgressRepairApplied",
+                false,
+                "Internal. Records that saving during co-op was switched on once, for installations that predate it. Do not modify manually."
+            );
+
+            if (!KeptProgressRepairApplied.Value)
+            {
+                if (!AllowSavesDuringNetplay.Value)
+                {
+                    AllowSavesDuringNetplay.Value = true;
+                    Plugin.Log.LogInfo("Switched on keeping the game's own progress during co-op; unlocks earned together were being thrown away.");
+                }
+                KeptProgressRepairApplied.Value = true;
+            }
             EnabledSharedExperience = config.Bind(
                 "Gameplay",
                 "EnabledSharedExperience",
