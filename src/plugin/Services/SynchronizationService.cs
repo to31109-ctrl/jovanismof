@@ -311,6 +311,7 @@ namespace MegabonkTogether.Services
             shrineChargingPlayers.Clear();
             foreignMuzzles.Clear();
             enemyInterpolators.Clear();
+            spatialisedAudio.Clear();
             pylonChargingPlayers.Clear();
             cancellationTokenSource.Cancel();
             cancellationTokenSource = new CancellationTokenSource();
@@ -1305,6 +1306,52 @@ namespace MegabonkTogether.Services
             return GameObject.Instantiate(attack.prefabProjectile);
         }
 
+        /// <summary>Objects whose sounds have already been made positional, by instance id.</summary>
+        private readonly HashSet<int> spatialisedAudio = new();
+
+        /// <summary>Where another player's shot stops being audible, in world units.</summary>
+        private const float ForeignAudioFullVolumeWithin = 6f;
+        private const float ForeignAudioSilentBeyond = 40f;
+
+        /// <summary>
+        /// Makes every sound under another player's muzzle or projectile positional.
+        ///
+        /// The game's own weapon sounds are two-dimensional: they only ever play for the local
+        /// player, at the local player's position, so there was never a reason to make them fall
+        /// off with distance. The mod replays those same objects at other players' positions,
+        /// and a two-dimensional sound played anywhere is heard everywhere at full volume -- every
+        /// shot from every player, from across the map. With the source on the object itself,
+        /// switching it to positional is enough: the object is already put where the shot is.
+        ///
+        /// Done once per object, keyed by instance id; a pooled projectile keeps the change for
+        /// its next use. A local shot on the same pooled object is at the listener's position and
+        /// plays at full volume regardless.
+        /// </summary>
+        private void MakeForeignAudioSpatial(GameObject root)
+        {
+            if (root == null) return;
+
+            try
+            {
+                if (!spatialisedAudio.Add(root.GetInstanceID())) return;
+
+                foreach (var source in root.RuntimeGetComponentsInChildren<AudioSource>(true))
+                {
+                    if (source == null) continue;
+                    source.spatialBlend = 1f;
+                    source.rolloffMode = AudioRolloffMode.Linear;
+                    source.minDistance = ForeignAudioFullVolumeWithin;
+                    source.maxDistance = ForeignAudioSilentBeyond;
+                    source.dopplerLevel = 0f;
+                    source.spread = 0f;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Could not make another player's sound positional: {ex.Message}");
+            }
+        }
+
         /// <summary>One muzzle flash per other player's weapon, reused, the way the game keeps its own.</summary>
         private readonly Dictionary<(uint owner, uint weapon), AttackMuzzle> foreignMuzzles = new();
 
@@ -1334,6 +1381,7 @@ namespace MegabonkTogether.Services
                         GameObject.Destroy(built);
                         return;
                     }
+                    MakeForeignAudioSpatial(built);
                     foreignMuzzles[key] = muzzle;
                 }
 
@@ -1394,6 +1442,7 @@ namespace MegabonkTogether.Services
                     var attack = weapon.weaponData.attack.GetComponent<WeaponAttack>();
                     attack.weaponBase = weapon;
                     var proj = TakeProjectileFromPool(attack);
+                    MakeForeignAudioSpatial(proj);
 
                     PoolHelper.EnsureWeaponPoolExists(eweapon);
 

@@ -454,6 +454,21 @@ if (Test-Path -LiteralPath $playerModel) {
     }
 }
 
+# 30. Another player's attack sounds must be positional. The game's weapon sounds are 2D because
+#     they only ever play for the local player; replayed at other players' positions unchanged,
+#     every shot from every player was heard at full volume from across the map.
+$syncFile3 = Join-Path $repo 'src/plugin/Services/SynchronizationService.cs'
+if (Test-Path -LiteralPath $syncFile3) {
+    $syncCode3 = (Get-Content -LiteralPath $syncFile3 | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    $calls = ([regex]::Matches($syncCode3, 'MakeForeignAudioSpatial\((built|proj)\)')).Count
+    if ($calls -lt 2) {
+        $faults += "SynchronizationService.cs makes another player's audio positional at $calls of the 2 places it must (the muzzle when built, the projectile when taken); the rest is heard from across the map."
+    }
+    if ($syncCode3 -notmatch 'spatialBlend\s*=\s*1f') {
+        $faults += "SynchronizationService.cs no longer sets spatialBlend to 1 on another player's sounds, so they are heard from across the map."
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red
