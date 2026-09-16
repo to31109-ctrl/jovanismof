@@ -309,6 +309,8 @@ namespace MegabonkTogether.Services
             toUpdate.Clear();
 
             shrineChargingPlayers.Clear();
+            foreignMuzzles.Clear();
+            enemyInterpolators.Clear();
             pylonChargingPlayers.Clear();
             cancellationTokenSource.Cancel();
             cancellationTokenSource = new CancellationTokenSource();
@@ -1303,6 +1305,79 @@ namespace MegabonkTogether.Services
             return GameObject.Instantiate(attack.prefabProjectile);
         }
 
+        /// <summary>One muzzle flash per other player's weapon, reused, the way the game keeps its own.</summary>
+        private readonly Dictionary<(uint owner, uint weapon), AttackMuzzle> foreignMuzzles = new();
+
+        /// <summary>
+        /// Plays the flash for another player's shot without building a new object for it.
+        ///
+        /// The game keeps a single muzzle per weapon (WeaponAttack.muzzle) and replays it with a
+        /// cooldown. The mod, for other players' revolver, shotgun and sniper shots, built a new
+        /// muzzle object on every shot and never destroyed any of them: a revolver firing for a
+        /// minute left several hundred of them in the scene, and they stayed for the rest of the
+        /// run. One per player per weapon now, repositioned and replayed.
+        /// </summary>
+        private void PlayForeignMuzzle(uint ownerId, EWeapon weapon, WeaponAttack attack,
+            Assets.Scripts.Inventory__Items__Pickups.Weapons.WeaponBase weaponBase, Vector3 position, Vector3 eulerAngles)
+        {
+            if (attack == null || attack.prefabMuzzle == null) return;
+
+            try
+            {
+                var key = (ownerId, (uint)weapon);
+                if (!foreignMuzzles.TryGetValue(key, out var muzzle) || muzzle == null)
+                {
+                    var built = GameObject.Instantiate(attack.prefabMuzzle);
+                    muzzle = built.GetComponent<AttackMuzzle>();
+                    if (muzzle == null)
+                    {
+                        GameObject.Destroy(built);
+                        return;
+                    }
+                    foreignMuzzles[key] = muzzle;
+                }
+
+                muzzle.transform.position = position;
+                muzzle.transform.eulerAngles = eulerAngles;
+                muzzle.Set(1, WeaponUtility.GetBurstInterval(weaponBase));
+                muzzle.Play();
+
+                var sfx = muzzle.GetComponent<RandomSfx>();
+                if (sfx != null) sfx.Play();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning($"Could not play another player's muzzle flash: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// The interpolator on each enemy, looked up once rather than on every tick.
+        ///
+        /// Enemy updates arrive twenty times a second for every enemy on the map, and each one
+        /// was answered with a GetComponent -- a call across into the game's runtime -- so with
+        /// five hundred enemies that was ten thousand of them a second.
+        ///
+        /// Keyed by the mod's own enemy id and checked against the wrapper object the enemy
+        /// manager hands out, which is the same instance for as long as that enemy is
+        /// registered. A pooled enemy that comes back under a new id, or a new wrapper under an
+        /// old id, misses and is looked up afresh. A hit costs no call into the game at all.
+        /// </summary>
+        private readonly Dictionary<uint, (Enemy wrapper, EnemyInterpolator interpolator)> enemyInterpolators = new();
+
+        private EnemyInterpolator InterpolatorFor(uint id, Enemy enemy)
+        {
+            if (enemyInterpolators.TryGetValue(id, out var entry) && ReferenceEquals(entry.wrapper, enemy))
+            {
+                return entry.interpolator;
+            }
+
+            var found = enemy.GetComponent<EnemyInterpolator>();
+            if (found != null) enemyInterpolators[id] = (enemy, found);
+            else enemyInterpolators.Remove(id);
+            return found;
+        }
+
         private void OnReceivedSpawnedProjectile(AbstractSpawnedProjectile projectile)
         {
             try
@@ -1417,21 +1492,7 @@ namespace MegabonkTogether.Services
                             DynamicData.For(projectileShotgun).Set("netplayId", projectile.Id);
                             DynamicData.For(projectileShotgun).Set("ownerId", projectile.OwnerId);
 
-                            if (attack.prefabMuzzle != null)
-                            {
-                                var muzzle = GameObject.Instantiate(attack.prefabMuzzle);
-                                AttackMuzzle attMuzzle = muzzle.GetComponent<AttackMuzzle>();
-                                attMuzzle.transform.position = Quantizer.Dequantize(message.MuzzlePosition);
-                                attMuzzle.transform.eulerAngles = Quantizer.Dequantize(message.MuzzleRotation);
-                                attMuzzle.Set(1, WeaponUtility.GetBurstInterval(weapon));
-                                attMuzzle.Play();
-
-                                RandomSfx muzzleSfx = muzzle.GetComponent<RandomSfx>();
-                                if (muzzleSfx != null)
-                                {
-                                    muzzleSfx.Play();
-                                }
-                            }
+                            PlayForeignMuzzle(projectile.OwnerId, eweapon, attack, weapon, Quantizer.Dequantize(message.MuzzlePosition), Quantizer.Dequantize(message.MuzzleRotation));
                             break;
                         case EWeapon.Sword:
                             var swordProjectileInstance = proj.GetComponent<ProjectileMelee>();
@@ -1491,21 +1552,7 @@ namespace MegabonkTogether.Services
                             DynamicData.For(revolverProjectileInstance).Set("netplayId", projectile.Id);
                             DynamicData.For(revolverProjectileInstance).Set("ownerId", projectile.OwnerId);
 
-                            if (attack.prefabMuzzle != null)
-                            {
-                                var muzzle = GameObject.Instantiate(attack.prefabMuzzle);
-                                AttackMuzzle attMuzzle = muzzle.GetComponent<AttackMuzzle>();
-                                attMuzzle.transform.position = Quantizer.Dequantize(messageRevolver.MuzzlePosition);
-                                attMuzzle.transform.eulerAngles = Quantizer.Dequantize(messageRevolver.MuzzleRotation);
-                                attMuzzle.Set(1, WeaponUtility.GetBurstInterval(weapon));
-                                attMuzzle.Play();
-
-                                RandomSfx muzzleSfx = muzzle.GetComponent<RandomSfx>();
-                                if (muzzleSfx != null)
-                                {
-                                    muzzleSfx.Play();
-                                }
-                            }
+                            PlayForeignMuzzle(projectile.OwnerId, eweapon, attack, weapon, Quantizer.Dequantize(messageRevolver.MuzzlePosition), Quantizer.Dequantize(messageRevolver.MuzzleRotation));
                             break;
                         case EWeapon.Sniper:
                             var messageSniper = projectile as SpawnedSniperProjectile;
@@ -1517,21 +1564,7 @@ namespace MegabonkTogether.Services
                             sniperProjectileInstance.transform.eulerAngles = Quantizer.Dequantize(projectile.Rotation);
                             DynamicData.For(sniperProjectileInstance).Set("netplayId", projectile.Id);
                             DynamicData.For(sniperProjectileInstance).Set("ownerId", projectile.OwnerId);
-                            if (attack.prefabMuzzle != null)
-                            {
-                                var muzzle = GameObject.Instantiate(attack.prefabMuzzle);
-                                AttackMuzzle attMuzzle = muzzle.GetComponent<AttackMuzzle>();
-                                attMuzzle.transform.position = Quantizer.Dequantize(messageSniper.MuzzlePosition);
-                                attMuzzle.transform.eulerAngles = Quantizer.Dequantize(messageSniper.MuzzleRotation);
-                                attMuzzle.Set(1, WeaponUtility.GetBurstInterval(weapon));
-                                attMuzzle.Play();
-
-                                RandomSfx muzzleSfx = muzzle.GetComponent<RandomSfx>();
-                                if (muzzleSfx != null)
-                                {
-                                    muzzleSfx.Play();
-                                }
-                            }
+                            PlayForeignMuzzle(projectile.OwnerId, eweapon, attack, weapon, Quantizer.Dequantize(messageSniper.MuzzlePosition), Quantizer.Dequantize(messageSniper.MuzzleRotation));
                             break;
 
                         default:
@@ -1656,7 +1689,7 @@ namespace MegabonkTogether.Services
                     continue;
                 }
 
-                var interpolator = enemy.GetComponent<EnemyInterpolator>();
+                var interpolator = InterpolatorFor(enemyModel.Id, enemy);
                 if (interpolator == null)
                 {
                     continue;

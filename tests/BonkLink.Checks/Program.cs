@@ -511,9 +511,12 @@ if(args.Contains("--public-relay"))
     };
     var bytes = MemoryPackSerializer.Serialize(lobby);
     var readBack = MemoryPackSerializer.Deserialize<MegabonkTogether.Common.Messages.LobbyUpdates>(bytes);
-    var stats = readBack!.Players.Single().Stats;
-    Check(stats.Count == 1 && stats[0].Stat == 3 && stats[0].Value == 1.5f,
-        "a lobby broadcast carrying a player's stat upgrades survives a round trip");
+    var carriedPlayer = readBack!.Players.Single();
+    // Stat upgrades are deliberately NOT in the lobby broadcast any more: only the host needs
+    // them and they have their own message. Riding inside every lobby packet at thirty a second
+    // they pushed it past a datagram and onto the reliable path a slow machine cannot catch up on.
+    Check(carriedPlayer.ConnectionId == 7 && carriedPlayer.Stats.Count == 0,
+        "a lobby broadcast leaves stat upgrades behind and carries the player");
 
     var reported = MemoryPackSerializer.Deserialize<MegabonkTogether.Common.Messages.GameNetworkMessages.PlayerStatsReported>(
         MemoryPackSerializer.Serialize(new MegabonkTogether.Common.Messages.GameNetworkMessages.PlayerStatsReported
@@ -602,6 +605,50 @@ if(args.Contains("--public-relay"))
         "somebody who has genuinely just joined with nothing does not block a checkpoint");
     Check(WorldSafety.WhoWasCapturedEmpty(new[] { Empty("Burger") }, null) == null,
         "the very first checkpoint of a world is never refused");
+}
+
+// --- Transient state must fit a datagram, so it never has to go reliable. ----------------------
+// Player and projectile positions used to switch to ReliableOrdered as soon as the message grew
+// past one datagram, which with more than a couple of players was every tick. Reliable and
+// ordered means a machine that falls behind must replay every stale position in sequence and can
+// never skip to the present -- the friends who were "in the past" were on the end of that stream.
+{
+    MegabonkTogether.Common.Models.Player Loaded(uint id) => new()
+    {
+        ConnectionId = id, Name = "sixteen-char-name", Identity = new string('a', 32), IsChoosing = true,
+        Inventory = new MegabonkTogether.Common.Models.InventoryInfo
+        {
+            WeaponInfos = Enumerable.Range(0, 6).Select(i => new MegabonkTogether.Common.Models.WeaponInfo { EWeapon = (uint)i, Level = 9 }).ToList(),
+            TomeInfos = Enumerable.Range(0, 8).Select(i => new MegabonkTogether.Common.Models.TomeInfo { ETome = (uint)i, Level = 9 }).ToList(),
+        },
+        Stats = Enumerable.Range(0, 120).Select(i => new SavedModifier { Stat = i, Operation = 1, Value = 1.5f }).ToList(),
+    };
+
+    var players = Enumerable.Range(1, 5).Select(i => Loaded((uint)i)).ToList();
+    var playerPackets = MegabonkTogether.Common.Networking.TransientPackets.EncodePlayers(players).ToList();
+    Check(playerPackets.Count == 5, "each player goes in a packet of their own");
+    Check(playerPackets.All(p => p.Length < MegabonkTogether.Common.Networking.TransientPackets.MaxDatagramPayload),
+        $"a fully loaded player fits one datagram (largest was {playerPackets.Max(p => p.Length)} bytes)");
+    var decodedIds = playerPackets
+        .Select(p => MemoryPackSerializer.Deserialize<IGameNetworkMessage>(p) as MegabonkTogether.Common.Messages.LobbyUpdates)
+        .SelectMany(m => m!.Players).Select(p => p.ConnectionId).OrderBy(x => x).ToList();
+    Check(decodedIds.SequenceEqual(new uint[] { 1, 2, 3, 4, 5 }), "every player arrives, one per packet, none twice");
+
+    var projectiles = Enumerable.Range(1, 200).Select(i => new MegabonkTogether.Common.Models.Projectile { Id = (uint)i }).ToList();
+    var projectilePackets = MegabonkTogether.Common.Networking.TransientPackets.EncodeProjectiles(projectiles).ToList();
+    Check(projectilePackets.All(p => p.Length < MegabonkTogether.Common.Networking.TransientPackets.MaxDatagramPayload),
+        $"a packet of projectiles fits one datagram (largest was {projectilePackets.Max(p => p.Length)} bytes)");
+    var decodedCount = projectilePackets
+        .Select(p => MemoryPackSerializer.Deserialize<IGameNetworkMessage>(p) as MegabonkTogether.Common.Messages.ProjectilesUpdate)
+        .Sum(m => m!.Projectiles.Count);
+    Check(decodedCount == 200, "every projectile arrives across the packets, none lost, none twice");
+
+    var weeds = Enumerable.Range(1, 100).Select(i => new MegabonkTogether.Common.Models.TumbleWeedModel { NetplayId = (uint)i, Position = new() }).ToList();
+    var weedPackets = MegabonkTogether.Common.Networking.TransientPackets.EncodeTumbleWeeds(weeds).ToList();
+    Check(weedPackets.All(p => p.Length < MegabonkTogether.Common.Networking.TransientPackets.MaxDatagramPayload),
+        $"a packet of tumbleweeds fits one datagram (largest was {weedPackets.Max(p => p.Length)} bytes)");
+    Check(weedPackets.Select(p => MemoryPackSerializer.Deserialize<IGameNetworkMessage>(p) as MegabonkTogether.Common.Messages.TumbleWeedsUpdate).Sum(m => m!.TumbleWeeds.Length) == 100,
+        "every tumbleweed arrives across the packets");
 }
 
 Console.WriteLine($"{passed} checks passed");

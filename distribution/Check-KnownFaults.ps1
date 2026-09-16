@@ -403,6 +403,57 @@ if (Test-Path -LiteralPath $syncFile) {
     }
 }
 
+# 27. Transient state -- positions of players and projectiles -- is never sent reliably. Sent
+#     ReliableOrdered, a lost packet holds up every packet behind it and a machine that falls
+#     behind must replay every stale position in order; it can never skip to the present. That is
+#     what "they are in the past" is. The old code switched to ReliableOrdered whenever a message
+#     outgrew a datagram, which with more than two players was every tick.
+$udpFile = Join-Path $repo 'src/plugin/Services/UdpClientService.cs'
+if (Test-Path -LiteralPath $udpFile) {
+    $udpCode = (Get-Content -LiteralPath $udpFile | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    # Only the four per-tick state broadcasts. SendToHost<T> carries one-off messages that may
+    # legitimately be large and reliable (a returning player's state, a log tail), and must not
+    # be caught here.
+    foreach ($stream in @('SendLobbyUpdate', 'SendEnemiesUpdate', 'SendProjectilesUpdate', 'SendTumbleWeedsUpdate')) {
+        $body = [regex]::Match($udpCode, "private void $stream\(\)[\s\S]*?(?=
+        (public|private|internal) )")
+        if (!$body.Success) { $faults += "UdpClientService.cs no longer has $stream(); the per-tick stream it sent has gone somewhere unchecked."; continue }
+        if ($body.Value -match 'ReliableOrdered') {
+            $faults += "UdpClientService.cs $stream() sends a per-tick state stream ReliableOrdered; split it into small unreliable packets instead."
+        }
+    }
+    foreach ($fn in @('TransientPackets.EncodePlayers', 'TransientPackets.EncodeProjectiles', 'TransientPackets.EncodeTumbleWeeds', 'EnemyPackets.Encode')) {
+        if ($udpCode -notmatch ([regex]::Escape($fn) + '\(')) {
+            $faults += "UdpClientService.cs no longer sends via $fn, so that stream can grow past a datagram and go reliable."
+        }
+    }
+}
+
+# 28. Another player's muzzle flash is reused, not built per shot. Built per shot and never
+#     destroyed, a revolver firing for a minute left hundreds of them in the scene for the run.
+$syncFile2 = Join-Path $repo 'src/plugin/Services/SynchronizationService.cs'
+if (Test-Path -LiteralPath $syncFile2) {
+    $syncCode2 = (Get-Content -LiteralPath $syncFile2 | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    $muzzleBuilds = ([regex]::Matches($syncCode2, 'Instantiate\(attack\.prefabMuzzle\)')).Count
+    if ($muzzleBuilds -ne 1) {
+        $faults += "SynchronizationService.cs builds another player's muzzle flash in $muzzleBuilds places; it must be built once inside PlayForeignMuzzle and reused."
+    }
+    if ($syncCode2 -notmatch 'PlayForeignMuzzle\(projectile\.OwnerId') {
+        $faults += 'SynchronizationService.cs no longer routes muzzle flashes through PlayForeignMuzzle.'
+    }
+}
+
+# 29. Stat upgrades stay out of the lobby broadcast. Only the host needs them and they have
+#     their own message; inside every lobby packet at thirty a second they were about a
+#     kilobyte per player and pushed the broadcast onto the reliable path.
+$playerModel = Join-Path $repo 'src/common/Models/Player.cs'
+if (Test-Path -LiteralPath $playerModel) {
+    $playerCode = (Get-Content -LiteralPath $playerModel | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    if ($playerCode -notmatch 'MemoryPackIgnore\]\s*public List<Persistence\.SavedModifier> Stats') {
+        $faults += 'Player.cs sends Stats inside the lobby broadcast again; that is a kilobyte per player thirty times a second.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red

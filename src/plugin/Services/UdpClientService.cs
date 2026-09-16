@@ -1423,21 +1423,14 @@ namespace MegabonkTogether.Services
         {
             var players = playerManagerService.GetAllPlayers();
 
-            var message = new LobbyUpdates
-            {
-                Players = players,
-            };
-
-            byte[] serialized = MemoryPackSerializer.Serialize<IGameNetworkMessage>(message);
-
-            var deliveryMethod = DeliveryMethod.Unreliable;
-
-            if (serialized.Length >= MAX_PACKET_SIZE_BYTES)
-            {
-                deliveryMethod = DeliveryMethod.ReliableOrdered;
-            }
-
-            SendToAllClients(serialized, deliveryMethod);
+            // One small unreliable packet per player, never one large reliable one. This used to
+            // switch to ReliableOrdered as soon as the roster outgrew a datagram -- which, with
+            // every player's inventory inside, was as soon as there were two of them. Reliable
+            // and ordered means a machine that falls behind must work through every stale
+            // position in sequence and can never skip to where everyone is now: the friends who
+            // were "in the past" were on the far end of exactly this stream.
+            foreach (var packet in MegabonkTogether.Common.Networking.TransientPackets.EncodePlayers(players))
+                SendToAllClients(packet, DeliveryMethod.Unreliable);
         }
 
         private void SendEnemiesUpdate()
@@ -1458,21 +1451,11 @@ namespace MegabonkTogether.Services
                 return;
             }
 
-            var message = new ProjectilesUpdate
-            {
-                Projectiles = [.. projectiles],
-            };
-
-            byte[] serialized = MemoryPackSerializer.Serialize<IGameNetworkMessage>(message);
-
-            var deliveryMethod = DeliveryMethod.Unreliable;
-
-            if (serialized.Length >= MAX_PACKET_SIZE_BYTES)
-            {
-                deliveryMethod = DeliveryMethod.ReliableOrdered;
-            }
-
-            SendToAllClients(serialized, deliveryMethod);
+            // Same rule as enemies and players: transient, so small and unreliable, never one
+            // large reliable message. With four players firing this stream was over a datagram
+            // on every tick and therefore reliable on every tick.
+            foreach (var packet in MegabonkTogether.Common.Networking.TransientPackets.EncodeProjectiles(projectiles))
+                SendToAllClients(packet, DeliveryMethod.Unreliable);
         }
 
         private void SendTumbleWeedsUpdate()
@@ -1484,21 +1467,10 @@ namespace MegabonkTogether.Services
                 return;
             }
 
-            var message = new TumbleWeedsUpdate
-            {
-                TumbleWeeds = [.. tumbleWeeds],
-            };
-
-            byte[] serialized = MemoryPackSerializer.Serialize<IGameNetworkMessage>(message);
-
-            var deliveryMethod = DeliveryMethod.Unreliable;
-
-            if (serialized.Length >= MAX_PACKET_SIZE_BYTES)
-            {
-                deliveryMethod = DeliveryMethod.ReliableOrdered;
-            }
-
-            SendToAllClients(serialized, deliveryMethod);
+            // Transient, like enemies, players and projectiles: small unreliable packets, never
+            // one large reliable one that a slow machine has to work through in order.
+            foreach (var packet in MegabonkTogether.Common.Networking.TransientPackets.EncodeTumbleWeeds(tumbleWeeds))
+                SendToAllClients(packet, DeliveryMethod.Unreliable);
         }
 
         public void SendToAllClients<T>(T data, DeliveryMethod deliveryMethod) where T : IGameNetworkMessage
