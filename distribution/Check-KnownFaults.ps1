@@ -469,6 +469,28 @@ if (Test-Path -LiteralPath $syncFile3) {
     }
 }
 
+# 31. Another player's projectile is never destroyed by the interpolator, never looked up with
+#     GetComponent per frame, and never touched once dead. Destroying a pooled object poisoned the
+#     pool for the next shot; the per-frame lookup on a dead object threw and wrote a stack trace
+#     to disk every frame, which is what chopped clients to thirty frames in the final swarm.
+$interp = Join-Path $repo 'src/plugin/Scripts/Snapshot/ProjectileInterpolator.cs'
+if (!(Test-Path -LiteralPath $interp)) {
+    $faults += 'src/plugin/Scripts/Snapshot/ProjectileInterpolator.cs is gone.'
+} else {
+    $interpCode = (Get-Content -LiteralPath $interp | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    if ($interpCode -match 'DestroyImmediate|GameObject\.Destroy|Object\.Destroy') {
+        $faults += 'ProjectileInterpolator.cs destroys a projectile again; these are pooled objects and destroying one poisons the pool for the next shot.'
+    }
+    $updateBody = [regex]::Match($interpCode, 'void Update\(\)[\s\S]*?(?=
+        public void UpdateProjectiles)')
+    if (!$updateBody.Success -or $updateBody.Value -match 'GetComponent') {
+        $faults += 'ProjectileInterpolator.cs calls GetComponent inside Update again; that is a call into the game per projectile per frame, and on a dead object it throws every frame.'
+    }
+    if ($interpCode -notmatch 'FinishingReplica\s*=\s*true') {
+        $faults += 'ProjectileInterpolator.cs no longer finishes a replica through the game''s own ProjectileDone, so a pooled object never returns to the pool.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red

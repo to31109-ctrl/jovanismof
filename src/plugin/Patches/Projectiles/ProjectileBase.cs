@@ -132,13 +132,20 @@ namespace MegabonkTogether.Patches.Projectiles
             var netplayId = DynamicData.For(__instance).Get<uint?>("netplayId");
             if (netplayId.HasValue && !isServer)
             {
-                return false;
+                // The one deliberate case: the interpolator ending another player's projectile
+                // because the host said it is done. The game's own finish runs, which is what
+                // returns a pooled object to the pool, and nobody is told -- the host already
+                // knows. Destroying the object instead poisoned the pool for the next shot.
+                return FinishingReplica;
             }
 
             synchronizationService.OnProjectileDone(__instance);
 
             return true;
         }
+
+        /// <summary>Set by the interpolator while it finishes a replica through the game's own path.</summary>
+        internal static bool FinishingReplica;
 
         [HarmonyPrefix]
         [HarmonyPatch(nameof(ProjectileBase.Update))]
