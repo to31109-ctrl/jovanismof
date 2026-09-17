@@ -218,6 +218,10 @@ namespace MegabonkTogether.Services
             {
                 return;
             }
+
+            // The mover goes with the enemy, or it would keep writing a pooled object's
+            // transform after that object had become somebody else.
+            MegabonkTogether.Scripts.Snapshot.EnemyInterpolator.Unregister(id);
         }
 
         public void ResetForNextLevel()
@@ -226,6 +230,7 @@ namespace MegabonkTogether.Services
             spawnedEnemies.Clear();
             enemyBaseline.Clear();
             nextFullSnapshot = 0;
+            MegabonkTogether.Scripts.Snapshot.EnemyInterpolator.Clear();
         }
 
         //TODO: the applied values should be stored in GameBalanceService

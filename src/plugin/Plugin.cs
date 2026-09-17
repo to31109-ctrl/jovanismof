@@ -112,7 +112,7 @@ namespace MegabonkTogether
             ClassInjector.RegisterTypeInIl2Cpp<MainThreadDispatcher>();
             ClassInjector.RegisterTypeInIl2Cpp<NetworkHandler>();
             ClassInjector.RegisterTypeInIl2Cpp<PlayerInterpolator>();
-            ClassInjector.RegisterTypeInIl2Cpp<EnemyInterpolator>();
+            // EnemyInterpolator is no longer a component: one managed registry moves every enemy.
             ClassInjector.RegisterTypeInIl2Cpp<BossOrbInterpolator>();
             ClassInjector.RegisterTypeInIl2Cpp<ProjectileInterpolator>();
             ClassInjector.RegisterTypeInIl2Cpp<TumbleWeedInterpolator>();

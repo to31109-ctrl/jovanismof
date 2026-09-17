@@ -28,7 +28,12 @@ namespace MegabonkTogether.Scripts.Snapshot
         public Vector3 Rotation { get; set; }
     }
 
-    public class EnemySnapshot : ISnapshot
+    /// <summary>
+    /// A struct, deliberately. Twenty of these a second arrive for every enemy that moved --
+    /// around eight thousand a second in a final swarm -- and as a class each one was a heap
+    /// allocation the garbage collector had to pay for, on the client only.
+    /// </summary>
+    public struct EnemySnapshot
     {
         public double Timestamp { get; set; }
         public Vector3 Position { get; set; }

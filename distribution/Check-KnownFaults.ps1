@@ -491,6 +491,39 @@ if (!(Test-Path -LiteralPath $interp)) {
     }
 }
 
+# 32. Enemies on a client are moved by one managed registry ticked once a frame, never by a
+#     component per enemy. A component per enemy costs the engine a boundary crossing for each
+#     one every frame -- tens of thousands a second in a swarm, on clients only -- and added
+#     unguarded to pooled objects it stacked up for the whole run.
+$enemyInterp = Join-Path $repo 'src/plugin/Scripts/Snapshot/EnemyInterpolator.cs'
+if (!(Test-Path -LiteralPath $enemyInterp)) {
+    $faults += 'src/plugin/Scripts/Snapshot/EnemyInterpolator.cs is gone.'
+} else {
+    $ei = (Get-Content -LiteralPath $enemyInterp | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    if ($ei -match 'class EnemyInterpolator\s*:\s*MonoBehaviour') {
+        $faults += 'EnemyInterpolator.cs is a MonoBehaviour again: one engine callback per enemy per frame, on clients only.'
+    }
+    if ($ei -notmatch 'public static void TickAll\(\)') {
+        $faults += 'EnemyInterpolator.cs no longer exposes TickAll, so nothing moves enemies from the single per-frame loop.'
+    }
+}
+foreach ($file in $source) {
+    $text = Get-Content -LiteralPath $file.FullName
+    for ($i = 0; $i -lt $text.Count; $i++) {
+        if ($text[$i] -match '^\s*(//|///)') { continue }
+        if ($text[$i] -match 'AddComponent<EnemyInterpolator>|RegisterTypeInIl2Cpp<EnemyInterpolator>') {
+            $faults += "$($file.Name):$($i + 1) makes EnemyInterpolator a per-enemy component again."
+        }
+    }
+}
+$nh = Join-Path $repo 'src/plugin/Scripts/NetworkHandler.cs'
+if (Test-Path -LiteralPath $nh) {
+    $nhCode = (Get-Content -LiteralPath $nh | Where-Object { $_ -notmatch '^\s*(//|///)' }) -join "`n"
+    if ($nhCode -notmatch 'EnemyInterpolator\.TickAll') {
+        $faults += 'NetworkHandler.cs no longer ticks EnemyInterpolator.TickAll, so enemies on a client never move.'
+    }
+}
+
 if ($faults.Count -gt 0) {
     Write-Host ''
     Write-Host 'Refusing to package. Faults that already reached players have come back:' -ForegroundColor Red

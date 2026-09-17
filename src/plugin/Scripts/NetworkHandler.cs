@@ -296,6 +296,9 @@ namespace MegabonkTogether.Scripts
                 Step("keeping a choice off the keyboard", KeepChoiceOffTheKeyboard);
                 Step("clearing a stale waiting notice", Patches.SpawnPlayerPortalPatches.ClearStaleWaitNotice);
                 Step("slowing the world for a choice", Patches.ChoiceSlowMotion.Tick);
+                // Every enemy on a client is moved from here, once a frame, instead of by a
+                // component per enemy that the engine had to call across the boundary for each.
+                Step("moving the host's enemies", MegabonkTogether.Scripts.Snapshot.EnemyInterpolator.TickAll);
 
                 if (isHost && isGameStarted)
                 {

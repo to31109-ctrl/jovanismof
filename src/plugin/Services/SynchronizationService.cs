@@ -310,7 +310,7 @@ namespace MegabonkTogether.Services
 
             shrineChargingPlayers.Clear();
             foreignMuzzles.Clear();
-            enemyInterpolators.Clear();
+            EnemyInterpolator.Clear();
             spatialisedAudio.Clear();
             pylonChargingPlayers.Clear();
             cancellationTokenSource.Cancel();
@@ -1092,8 +1092,9 @@ namespace MegabonkTogether.Services
                 }
             }
 
-            var interpolator = enemy.gameObject.AddComponent<EnemyInterpolator>();
-            interpolator.Initialize(enemy);
+            // Registered by id, replacing any mover left on this pooled object from its last
+            // life. AddComponent here, unguarded, used to stack one interpolator per reuse.
+            EnemyInterpolator.Register(spawnedEnemy.Id, enemy);
             enemyManagerService.SetSpawnedEnemy(spawnedEnemy.Id, enemy);
 
             DynamicData.For(enemy).Set("targetId", spawnedEnemy.TargetId);
@@ -1397,33 +1398,6 @@ namespace MegabonkTogether.Services
             {
                 logger.LogWarning($"Could not play another player's muzzle flash: {ex.Message}");
             }
-        }
-
-        /// <summary>
-        /// The interpolator on each enemy, looked up once rather than on every tick.
-        ///
-        /// Enemy updates arrive twenty times a second for every enemy on the map, and each one
-        /// was answered with a GetComponent -- a call across into the game's runtime -- so with
-        /// five hundred enemies that was ten thousand of them a second.
-        ///
-        /// Keyed by the mod's own enemy id and checked against the wrapper object the enemy
-        /// manager hands out, which is the same instance for as long as that enemy is
-        /// registered. A pooled enemy that comes back under a new id, or a new wrapper under an
-        /// old id, misses and is looked up afresh. A hit costs no call into the game at all.
-        /// </summary>
-        private readonly Dictionary<uint, (Enemy wrapper, EnemyInterpolator interpolator)> enemyInterpolators = new();
-
-        private EnemyInterpolator InterpolatorFor(uint id, Enemy enemy)
-        {
-            if (enemyInterpolators.TryGetValue(id, out var entry) && ReferenceEquals(entry.wrapper, enemy))
-            {
-                return entry.interpolator;
-            }
-
-            var found = enemy.GetComponent<EnemyInterpolator>();
-            if (found != null) enemyInterpolators[id] = (enemy, found);
-            else enemyInterpolators.Remove(id);
-            return found;
         }
 
         private void OnReceivedSpawnedProjectile(AbstractSpawnedProjectile projectile)
@@ -1738,11 +1712,7 @@ namespace MegabonkTogether.Services
                     continue;
                 }
 
-                var interpolator = InterpolatorFor(enemyModel.Id, enemy);
-                if (interpolator == null)
-                {
-                    continue;
-                }
+                if (!EnemyInterpolator.TryGet(enemyModel.Id, out var interpolator)) continue;
 
                 var snapshot = enemyModel.ToSnapshot(Time.timeAsDouble);
 
